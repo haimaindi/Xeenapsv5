@@ -1,8 +1,8 @@
 /**
- * XEENAPS PKM - SECURE BACKEND V34 (STRICT PIPED 1 & 2 ONLY)
- * 1. Full Metadata Extraction via YouTube Data API v3.
- * 2. Audio Extraction via Piped 1 (kavin) and Piped 2 (il.ax) ONLY.
- * 3. Graceful Degradation: If audio fails, returns metadata context for AI analysis.
+ * XEENAPS PKM - SECURE BACKEND V33 (PIPED API + ENHANCED METADATA)
+ * 1. Full Metadata Extraction (Description, Tags, Dates) via YouTube Data API v3.
+ * 2. Graceful Degradation: Returns metadata for AI analysis even if audio extraction/whisper fails.
+ * 3. Conditional Whisper: Only triggered if Python API returns a valid stream URL.
  */
 
 const CONFIG = {
@@ -215,7 +215,7 @@ function processGroqWhisper(audioBlob) {
 }
 
 /**
- * HANDLE URL EXTRACTION (YT DATA API -> PIPED AUDIO -> FALLBACK METADATA)
+ * HANDLE URL EXTRACTION (WITH GRACEFUL FALLBACK TO METADATA)
  */
 function handleUrlExtraction(url) {
   const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
@@ -229,8 +229,9 @@ function handleUrlExtraction(url) {
     else { const match = url.match(/v=([^&]+)/); videoId = match ? match[1] : ""; }
     if (!videoId) throw new Error("Invalid YouTube URL.");
 
-    // 1. Mandatory Metadata via YouTube Data API v3
+    // 1. Mandatory Full Metadata from YouTube API v3
     const ytInfo = getYoutubeVideoInfo(videoId);
+    
     let metadataStr = `YOUTUBE_METADATA:
 Title: ${ytInfo.title}
 Channel: ${ytInfo.channel}
@@ -240,12 +241,12 @@ Description: ${ytInfo.description}
 Tags: ${ytInfo.tags.join(", ")}
 `;
 
-    // 2. Try Official Subtitles (if exist)
+    // 2. Try Official Subtitles
     const officialSubs = getYoutubeOfficialCaptions(videoId);
     if (officialSubs) return metadataStr + "\nOFFICIAL CAPTIONS CONTENT:\n" + officialSubs;
 
-    // 3. Try Audio Extraction (Piped 1 & 2 via Vercel)
-    if (ytInfo.durationSec <= 1800) { // Limit 30m for stability
+    // 3. Fallback to Whisper via Piped/Invidious Vercel API
+    if (ytInfo.durationSec <= 1800) { // Max 30 mins
       try {
         const vResponse = UrlFetchApp.fetch(CONFIG.PYTHON_API_URL, {
           method: 'post',
@@ -254,29 +255,23 @@ Tags: ${ytInfo.tags.join(", ")}
           muteHttpExceptions: true
         });
         
-        if (vResponse.getResponseCode() === 200) {
-          const resText = vResponse.getContentText();
-          // Ensure it's valid JSON before parsing
-          if (resText.trim().startsWith('{')) {
-            const vJson = JSON.parse(resText);
-            if (vJson.status === 'success' && vJson.stream_url) {
-              const audioRes = UrlFetchApp.fetch(vJson.stream_url);
-              const audioBlob = audioRes.getBlob().setName("temp_" + videoId + ".m4a");
-              const transcript = processGroqWhisper(audioBlob);
-              return metadataStr + "\nWHISPER TRANSCRIPT CONTENT:\n" + transcript;
-            }
-          }
+        const vJson = JSON.parse(vResponse.getContentText());
+        if (vJson.status === 'success' && vJson.stream_url) {
+          const audioRes = UrlFetchApp.fetch(vJson.stream_url);
+          const audioBlob = audioRes.getBlob().setName("temp_" + videoId + ".m4a");
+          const transcript = processGroqWhisper(audioBlob);
+          return metadataStr + "\nWHISPER TRANSCRIPT CONTENT:\n" + transcript;
         }
       } catch (e) {
-        console.warn("Audio extraction failed for video ID: " + videoId + ". Falling back to metadata only.");
+        console.warn("Audio extraction failed, using metadata context for AI analysis.");
       }
     }
 
-    // 4. Fallback to Metadata Only
-    return metadataStr + "\nTRANSCRIPT_UNAVAILABLE: Analyzing based on video description and metadata provided above.";
+    // 4. Return Full Metadata Only (Graceful Degradation)
+    return metadataStr + "\nTRANSCRIPT_UNAVAILABLE: Please analyze item based on the description and metadata provided above.";
   }
 
-  // Non-YouTube Logic (Drive/Web Scraper)
+  // Non-YouTube Logic (Drive/Web)
   const driveId = getFileIdFromUrl(url);
   if (driveId && (url.includes('drive.google.com') || url.includes('docs.google.com'))) {
     try {

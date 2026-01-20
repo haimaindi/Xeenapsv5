@@ -313,12 +313,12 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
                 </div>
               </FormField>
             ) : formData.addMethod === 'REF' ? (
-              <FormField label="Identifier (DOI, ISSN, ISBN, PMID, etc.)" required error={!formData.doi}>
+              <FormField label="Identifier (Title, DOI, ISBN, PMID, ArXivID, or BibCode)" required error={!formData.doi}>
                 <div className="relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center">
                     {isExtracting ? <ArrowPathIcon className="w-5 h-5 text-[#004A74] animate-spin" /> : <FingerPrintIcon className="w-5 h-5 text-gray-300 group-focus-within:text-[#004A74]" />}
                   </div>
-                  <input className={`w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl focus:ring-2 border ${!formData.doi ? 'border-red-300' : 'border-gray-200'} text-sm font-mono font-bold transition-all ${isFormDisabled ? 'opacity-80' : ''}`} placeholder="Enter DOI, ISBN, PMID, Bibcode, or Title..." value={formData.doi} onChange={(e) => setFormData({...formData, doi: e.target.value})} disabled={isFormDisabled} />
+                  <input className={`w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl focus:ring-2 border ${!formData.doi ? 'border-red-300' : 'border-gray-200'} text-sm font-mono font-bold transition-all ${isFormDisabled ? 'opacity-80' : ''}`} placeholder="Enter DOI, ISBN, PMID, ArXivID, Bibcode, or Title..." value={formData.doi} onChange={(e) => setFormData({...formData, doi: e.target.value})} disabled={isFormDisabled} />
                 </div>
               </FormField>
             ) : (

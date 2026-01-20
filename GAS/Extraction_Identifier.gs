@@ -1,7 +1,7 @@
 /**
- * XEENAPS PKM - ACADEMIC IDENTIFIER MODULE (SMART ROUTER V5)
+ * XEENAPS PKM - ACADEMIC IDENTIFIER MODULE (SMART ROUTER V6)
  * Exclusive OpenLibrary for Books, Crossref/OpenAlex for Journals
- * Removed Google Books API, Fixed Search Loops
+ * Improved "Closest Match" logic and Bibcode resolution
  */
 
 function handleIdentifierSearch(idValue) {
@@ -36,8 +36,9 @@ function handleIdentifierSearch(idValue) {
     return fetchArxivMetadata(arxivId);
   }
 
-  // 5. BIBCODE DETECTION
+  // 5. BIBCODE DETECTION (e.g., 1974AJ.....79..819H)
   if (val.match(/^\d{4}[A-Za-z0-9.&]{15}$/)) {
+    // Try resolving as a query string in Crossref which handles many Bibcodes
     return fetchCrossrefMetadata(null, val); 
   }
 
@@ -56,14 +57,14 @@ function handleIdentifierSearch(idValue) {
 
     if (verbatimMatch) return verbatimMatch;
 
-    // If no verbatim match, return the best effort (closest match)
-    // Preference: Crossref (Journal) -> OpenAlex (Academic) -> OpenLibrary (Book)
+    // If no verbatim match, return the "Closest Match" (Best Effort)
+    // Priority for scientific works: Crossref -> OpenAlex -> OpenLibrary
     if (crossrefSearch.status === 'success') return crossrefSearch;
     if (alexSearch.status === 'success') return alexSearch;
     if (olSearch.status === 'success') return olSearch;
   }
 
-  return { status: 'error', message: 'No data found. Please provide a valid identifier.' };
+  return { status: 'error', message: 'No Data Found, please give right identifier' };
 }
 
 /**
@@ -75,24 +76,17 @@ function standardizeFullDate(dateStr) {
   
   try {
     const s = dateStr.toString().trim();
-    
-    // YYYY-MM-DD
     if (s.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
       const parts = s.split("-");
       const mIdx = parseInt(parts[1]) - 1;
       return `${parts[2].padStart(2, '0')} ${months[mIdx] || 'Jan'} ${parts[0]}`;
     }
-    
-    // Just YYYY
     if (s.match(/^\d{4}$/)) return `01 Jan ${s}`;
-    
-    // Month YYYY or Day Month YYYY (e.g., "August 15, 2024")
     const d = new Date(s);
     if (!isNaN(d.getTime())) {
       return `${d.getDate().toString().padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
     }
   } catch (e) {}
-  
   return dateStr;
 }
 
@@ -111,13 +105,9 @@ function mergeMetadata(sourceA, sourceB) {
   Object.keys(b).forEach(key => {
     const valA = String(merged[key] || "");
     const valB = String(b[key] || "");
-    
-    // Prefer longer/fuller strings
     if (valA.length < valB.length) {
       merged[key] = b[key];
     }
-    
-    // Special handling for authors
     if (key === 'authors' && Array.isArray(b.authors) && b.authors.length > (Array.isArray(a.authors) ? a.authors.length : 0)) {
       merged.authors = b.authors;
     }
@@ -262,15 +252,12 @@ function searchOpenLibraryByTitle(title) {
     
     if (!data.docs || data.docs.length === 0) return { status: 'error' };
 
-    // Find best match that isn't a correction
     const doc = data.docs.find(d => !(d.title || "").toLowerCase().startsWith("correction to:")) || data.docs[0];
     
-    // Get full metadata using the first ISBN found in search result
     if (doc.isbn && doc.isbn.length > 0) {
       return fetchOpenLibraryMetadata(doc.isbn[0]);
     }
 
-    // Fallback using search document fields if no full metadata fetch possible
     return {
       status: 'success',
       data: {

@@ -236,6 +236,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       
       const generatedId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
 
+      // Construct the newItem with separate keywords/labels and full chunk mapping
       const newItem: any = { 
         ...formData, 
         id: generatedId, 
@@ -244,9 +245,18 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         source: formData.addMethod === 'LINK' ? SourceType.LINK : SourceType.FILE, 
         format: formData.addMethod === 'LINK' ? FileFormat.URL : detectedFormat, 
         author: formData.authors.join(', '), 
-        tags: [...formData.keywords, ...formData.labels], 
-        extractedInfo1: formData.chunks[0] || ''
+        tags: [...formData.keywords, ...formData.labels]
       };
+
+      // Map all available chunks to extractedInfo1...10
+      if (formData.chunks && formData.chunks.length > 0) {
+        formData.chunks.forEach((chunk, index) => {
+          if (index < 10) {
+            newItem[`extractedInfo${index + 1}`] = chunk;
+          }
+        });
+      }
+
       const success = await saveLibraryItem(newItem, fileUploadData);
       Swal.close();
       if (success) { onComplete(); navigate('/'); }

@@ -135,7 +135,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     return () => clearTimeout(tid);
   }, [formData.url, formData.addMethod]);
 
-  // Logic for REF mode (DOI, ISBN, PMID, etc.)
+  // Logic for REF mode (Cascading Search)
   useEffect(() => {
     const handleIdentifierSearch = async () => {
       const idVal = formData.doi.trim(); 
@@ -250,9 +250,8 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     }
   };
 
-  // Helper to convert date picker (YYYY-MM-DD) to string (DD MMM YYYY)
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = e.target.value; // Format: YYYY-MM-DD
+    const val = e.target.value; 
     if (!val) {
       setFormData(prev => ({ ...prev, fullDate: '' }));
       return;
@@ -261,6 +260,22 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const formatted = `${d.getDate().toString().padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
     setFormData(prev => ({ ...prev, fullDate: formatted }));
+  };
+
+  // Convert "DD MMM YYYY" back to "YYYY-MM-DD" for the input[type="date"] display
+  const getHtmlDateValue = (fullDate: string) => {
+    if (!fullDate) return "";
+    try {
+      const parts = fullDate.split(' ');
+      if (parts.length === 3) {
+        const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+        const m = months.indexOf(parts[1]);
+        if (m === -1) return "";
+        const d = new Date(parseInt(parts[2]), m, parseInt(parts[0]));
+        return d.toISOString().split('T')[0];
+      }
+    } catch(e) {}
+    return "";
   };
 
   const isExtracting = extractionStage !== 'IDLE';
@@ -353,7 +368,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             </div>
           </div>
 
-          {/* Timing Section - YEAR and DATE (Sesuai Permintaan) */}
+          {/* Timing Section - YEAR and DATE (Restricted and Native Modal) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField label="Year (YYYY)">
               <input 
@@ -366,8 +381,8 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
                   if (val.length <= 4) setFormData({...formData, year: val});
                 }} 
                 onKeyDown={(e) => {
-                  // Only allow digits, Backspace, Delete, Arrow keys
-                  if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.key)) {
+                  // Prevent non-numeric characters e, +, -, .
+                  if (['e', '+', '-', '.'].includes(e.key.toLowerCase())) {
                     e.preventDefault();
                   }
                 }} 
@@ -378,6 +393,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
               <input 
                 type="date" 
                 className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" 
+                value={getHtmlDateValue(formData.fullDate)}
                 onChange={handleDateChange} 
                 disabled={isFormDisabled} 
               />

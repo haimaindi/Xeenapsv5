@@ -7,38 +7,37 @@ import { callAiProxy } from "./gasService";
  */
 export const extractMetadataWithAI = async (textSnippet: string): Promise<Partial<LibraryItem>> => {
   try {
-    // Increased snippet slightly to 8500 to handle noisier raw HTML data better
     const truncatedSnippet = textSnippet.substring(0, 8500);
 
     const prompt = `ACT AS AN EXPERT SENIOR ACADEMIC LIBRARIAN. 
     EXTRACT DATA FROM THE PROVIDED TEXT AND RETURN IN RAW JSON FORMAT ONLY.
 
     --- SPECIAL LOGIC FOR YOUTUBE VIDEOS ---
-    IF the text snippet begins with "YOUTUBE_METADATA:" or contains a YouTube transcript:
+    IF the text snippet contains "YOUTUBE_METADATA:" or a YouTube transcript:
     - "category": MUST be exactly "Video".
     - "publisher": MUST be exactly "YouTube".
-    - "author": Use the "Channel" name identified in the metadata.
-    - "year": Identify the publication year from content if available, otherwise leave empty.
-    - "inTextAPA", "inTextHarvard", "inTextChicago", "bibAPA", "bibHarvard", "bibChicago": MUST BE NULL OR EMPTY STRING. Do not generate citations for YouTube videos.
+    - "authors": Use the "Channel" name as the only item in the array.
+    - "title": Use the "Title" found in the metadata.
+    - "year": Guess the year from the content or transcript context if not found.
+    - "inTextAPA", "inTextHarvard", "inTextChicago", "bibAPA", "bibHarvard", "bibChicago": MUST BE EMPTY STRINGS.
     ----------------------------------------
 
     SCOPE LIMITATION (CRITICAL):
-    - ANALYZE ONLY: title, topic, subTopic, authors, publisher, year, keywords, labels, and all 6 citation fields.
-    - DO NOT analyze: researchMethodology, abstract, summary, strength, weakness, unfamiliarTerminology, supportingReferences, videoRecommendation, quickTipsForYou.
+    - ANALYZE ONLY: title, topic, subTopic, authors, publisher, year, keywords, labels, and citation fields.
+    - DO NOT analyze: researchMethodology, abstract, summary, etc.
 
     CRITICAL INSTRUCTION FOR ROBUSTNESS:
     1. COMPLETE FIELDS (NO TRUNCATION):
-       - "title": Full, official academic or video title.
-       - "authors": List of all full names found. For videos, use the Channel Name as the primary author.
-       - "publisher": Identify ACCURATELY. If YouTube, use "YouTube". Otherwise, identify complete Journal/Publisher.
-       - "bibAPA", "bibHarvard", "bibChicago": COMPLETE bibliographic entries (ignored for videos).
+       - "title": Full official title.
+       - "authors": Array of full names.
+       - "publisher": Journal name or "YouTube".
+       - "bibAPA", "bibHarvard", "bibChicago": Full bibliographic entries (Empty for Videos).
     
     2. CONCISE FIELDS:
-       - "topic": Exactly 2 words describing the main field.
-       - "subTopic": Exactly 2 words describing the specific niche.
-       - "keywords": Exactly 5 relevant academic keywords extracted from content.
-       - "labels": Exactly 3 thematic labels extracted from content.
-       - "year": Accurately identify the exact year of publication from the source.
+       - "topic": Exactly 2 words.
+       - "subTopic": Exactly 2 words.
+       - "keywords": Exactly 5 relevant academic keywords.
+       - "labels": Exactly 3 thematic labels.
 
     3. STYLE COMPLIANCE (NON-VIDEO): 
        - inTextAPA: (Author, Year)
@@ -47,15 +46,15 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
 
     EXPECTED JSON SCHEMA:
     {
-      "title": "Full Academic Title",
-      "authors": ["Full Name 1"],
+      "title": "Full Title",
+      "authors": ["Name"],
       "year": "YYYY",
-      "publisher": "Full Journal/Publisher Name",
-      "category": "e.g., Original Research or Video",
+      "publisher": "Name",
+      "category": "Video or Original Research",
       "topic": "Two Words",
       "subTopic": "Two Words",
-      "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],
-      "labels": ["label1", "label2", "label3"],
+      "keywords": ["k1", "k2", "k3", "k4", "k5"],
+      "labels": ["l1", "l2", "l3"],
       "inTextAPA": "...",
       "inTextHarvard": "...",
       "inTextChicago": "...",
@@ -64,10 +63,9 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
       "bibChicago": "..."
     }
 
-    TEXT SNIPPET TO ANALYZE (MIGHT BE RAW DATA):
+    TEXT SNIPPET:
     ${truncatedSnippet}`;
 
-    // Always using GROQ as requested for this initial analysis
     const response = await callAiProxy('groq', prompt);
     if (!response) return {};
     

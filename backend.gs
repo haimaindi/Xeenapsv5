@@ -1,5 +1,10 @@
 /**
- * XEENAPS PKM - SECURE BACKEND V31 (ULTRA-COMPLETE EXTRACTION)
+ * XEENAPS PKM - SECURE BACKEND V30 (MAXIMIZED NATIVE + EMERGENCY SCRAPINGANT)
+ * Logic: 
+ * 0. YouTube Proxy (Vercel Python) - ADDED FOR VIDEO SUPPORT
+ * 1. Google Drive/Docs (Internal)
+ * 2. Native UrlFetch (Method 1 - Primary & Mandatory if Success > 200 chars)
+ * 3. ScrapingAnt (Method 2 - Backup only for Hard Blocks/Empty responses)
  */
 
 const CONFIG = {
@@ -11,8 +16,8 @@ const CONFIG = {
     KEYS: '1QRzqKe42ck2HhkA-_yAGS-UHppp96go3s5oJmlrwpc0',
     AI_CONFIG: '1RVYM2-U5LRb8S8JElRSEv2ICHdlOp9pnulcAM8Nd44s'
   },
-  // SET YOUR VERCEL PYTHON API URL HERE
-  PYTHON_API_URL: 'https://xeenaps-pkm.vercel.app/api/extract',
+  // POINT TO YOUR VERCEL ENDPOINT
+  PYTHON_API_URL: 'https://xeenaps-v1.vercel.app/api/extract',
   SCHEMAS: {
     LIBRARY: [
       'id', 'title', 'type', 'category', 'topic', 'subTopic', 'author', 'authors', 'publisher', 'year', 
@@ -109,27 +114,25 @@ function getFileIdFromUrl(url) {
 }
 
 /**
- * ULTRA-COMPLETE handleUrlExtraction
+ * OPTIMIZED handleUrlExtraction
+ * Logic: Strict prioritization to save ScrapingAnt tokens.
  */
 function handleUrlExtraction(url) {
-  // LAYER 0: YouTube Extraction via Python API (Vercel)
+  // LAYER 0: YouTube Extraction (via Vercel Proxy)
   if (url.includes('youtube.com') || url.includes('youtu.be')) {
-    const pythonUrl = CONFIG.PYTHON_API_URL;
-    if (pythonUrl && !pythonUrl.includes('your-vercel-domain')) {
-      try {
-        const response = UrlFetchApp.fetch(pythonUrl, {
-          method: 'post',
-          contentType: 'application/json',
-          payload: JSON.stringify({ url: url }),
-          muteHttpExceptions: true
-        });
-        if (response.getResponseCode() === 200) {
-          const json = JSON.parse(response.getContentText());
-          if (json.status === 'success') return json.data;
-        }
-      } catch (e) {
-        console.log("YouTube Python Extraction Error: " + e.message);
+    try {
+      const response = UrlFetchApp.fetch(CONFIG.PYTHON_API_URL, {
+        method: 'post',
+        contentType: 'application/json',
+        payload: JSON.stringify({ url: url }),
+        muteHttpExceptions: true
+      });
+      if (response.getResponseCode() === 200) {
+        const json = JSON.parse(response.getContentText());
+        if (json.status === 'success') return json.data;
       }
+    } catch (e) {
+      console.log("YouTube proxy call failed: " + e.message);
     }
   }
 
@@ -162,23 +165,7 @@ function handleUrlExtraction(url) {
     } catch (e) { console.log("Drive failed: " + e.message); }
   }
 
-  // LAYER 2: Specialized Wikipedia API (Solusi B)
-  if (url.includes('wikipedia.org')) {
-    const wikiMatch = url.match(/([a-z]+)\.wikipedia\.org\/wiki\/(.+)/i);
-    if (wikiMatch) {
-      try {
-        const lang = wikiMatch[1];
-        const title = wikiMatch[2];
-        const apiUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/mobile-html/${title}`;
-        const wikiRes = UrlFetchApp.fetch(apiUrl, { muteHttpExceptions: true });
-        if (wikiRes.getResponseCode() === 200) {
-          return `SOURCE: Wikipedia (${lang})\n\n` + cleanHtml(wikiRes.getContentText());
-        }
-      } catch(e) { console.log("Wiki API failed"); }
-    }
-  }
-
-  // LAYER 3: Native Fetch with Smart Selection (Solusi A)
+  // LAYER 2: Native Fetch (Method 1) - Best for Wikipedia/Detik
   let nativeContent = "";
   try {
     const response = UrlFetchApp.fetch(url, { 
@@ -188,70 +175,41 @@ function handleUrlExtraction(url) {
     
     if (response.getResponseCode() === 200) {
       const html = response.getContentText();
+      // If native fetch isn't explicitly blocked by a bot-wall
       if (!isBlocked(html)) {
         const metadata = extractWebMetadata(html);
-        const body = smartCleanHtml(html); // Use Smarter Selector
+        const body = cleanHtml(html);
         nativeContent = metadata + "\n\n" + body;
 
-        // If body is substantial (> 800 chars), we stop here
-        if (body.length > 800) return nativeContent;
+        // CRITICAL: If we have > 200 chars of actual body text, Method 1 is successful. STOP HERE.
+        if (body.length > 200) {
+          return nativeContent;
+        }
       }
     }
   } catch (e) { console.log("Native fetch error: " + e.message); }
 
-  // LAYER 4: ScrapingAnt (Solusi C - Conditional JS Rendering)
+  // LAYER 3: ScrapingAnt (Method 2 - Backup Only)
+  // Only reached if Method 1 returned < 200 chars or was blocked.
   const saKey = getScrapingAntKey();
   if (saKey) {
     try {
-      // Step 1: Standard Hemat
-      let saUrl = `https://api.scrapingant.com/v2/general?url=${encodeURIComponent(url)}&x-api-key=${saKey}`;
-      let response = UrlFetchApp.fetch(saUrl, { muteHttpExceptions: true });
-      let html = response.getContentText();
-      let body = smartCleanHtml(html);
-
-      // Step 2: Emergency JS Rendering (If standard is too short)
-      if (body.length < 500 && response.getResponseCode() === 200) {
-        console.log("Upgrading to JS Rendering for completeness...");
-        saUrl += "&browser=true&block_ads=true";
-        response = UrlFetchApp.fetch(saUrl, { muteHttpExceptions: true });
-        html = response.getContentText();
-        body = smartCleanHtml(html);
-      }
+      const saUrl = `https://api.scrapingant.com/v2/general?url=${encodeURIComponent(url)}&x-api-key=${saKey}`;
+      const response = UrlFetchApp.fetch(saUrl, { muteHttpExceptions: true });
+      const html = response.getContentText();
       
       if (response.getResponseCode() === 200 && !isBlocked(html)) {
-        return extractWebMetadata(html) + "\n\n" + body;
+        return extractWebMetadata(html) + "\n\n" + cleanHtml(html);
       }
-    } catch (e) { console.log("ScrapingAnt failed"); }
-  }
-
-  // FINAL FALLBACK
-  return nativeContent || "Could not extract complete content from this URL.";
-}
-
-/**
- * SMART SELECTOR LOGIC (Solusi A)
- */
-function smartCleanHtml(html) {
-  if (!html) return "";
-  
-  // Attempt to find content in priority tags
-  const contentTags = [
-    /<article[^>]*>([\s\S]*?)<\/article>/i,
-    /<main[^>]*>([\s\S]*?)<\/main>/i,
-    /<div[^>]*id=["'](?:content|main-content|article-body|post-body|entry-content)["'][^>]*>([\s\S]*?)<\/div>/i,
-    /<div[^>]*class=["'](?:content|article|post-text|main-article)["'][^>]*>([\s\S]*?)<\/div>/i
-  ];
-
-  for (let regex of contentTags) {
-    const match = html.match(regex);
-    if (match && match[1].length > 400) {
-      return cleanHtml(match[1]);
+    } catch (e) {
+      console.log("ScrapingAnt failed: " + e.message);
     }
   }
 
-  // If no main container found, clean the whole body
-  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
-  return cleanHtml(bodyMatch ? bodyMatch[1] : html);
+  // FINAL FALLBACK: If ScrapingAnt also failed, return whatever Method 1 got, even if short.
+  if (nativeContent && nativeContent.length > 50) return nativeContent;
+  
+  throw new Error("All extraction methods failed for this URL.");
 }
 
 function extractWebMetadata(html) {
@@ -266,10 +224,12 @@ function extractWebMetadata(html) {
 }
 
 function isBlocked(text) {
-  if (!text || text.length < 200) return true;
+  if (!text || text.length < 200) return true; // Threshold lowered to 200
   const criticalBlocked = ["access denied", "cloudflare", "security check", "captcha", "bot detection", "robot check"];
   const textLower = text.toLowerCase();
-  if (text.length < 2000) {
+  
+  // We only consider it blocked if these keywords appear in a relatively short text snippet
+  if (text.length < 1500) {
      return criticalBlocked.some(keyword => textLower.includes(keyword));
   }
   return false;
@@ -278,8 +238,6 @@ function isBlocked(text) {
 function cleanHtml(html) {
   return html.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "")
              .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "")
-             .replace(/<nav\b[^>]*>([\s\S]*?)<\/nav>/gim, "") // Specifically remove nav tags
-             .replace(/<footer\b[^>]*>([\s\S]*?)<\/footer>/gim, "") // Specifically remove footer tags
              .replace(/<[^>]*>/g, " ")
              .replace(/\s+/g, " ")
              .trim();

@@ -1,2 +1,7 @@
 flask
+pypdf
+python-pptx
+python-docx
+openpyxl
 requests
+yt-dlp

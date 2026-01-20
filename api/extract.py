@@ -6,14 +6,22 @@ import yt_dlp
 
 app = Flask(__name__)
 
-# Set max content length to 25MB
-app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024
+# List of Invidious instances to use as fallbacks for stream extraction
+INVIDIOUS_INSTANCES = [
+    "https://inv.vern.cc",
+    "https://invidious.snopyta.org",
+    "https://yewtu.be",
+    "https://vid.puffyan.us",
+    "https://invidious.kavin.rocks",
+    "https://inv.riverside.rocks"
+]
 
 def get_audio_stream_url(url):
     """
-    Extracts the direct audio stream URL using yt-dlp.
-    Does not download the file, just retrieves the URL for the best m4a/aac stream.
+    Attempts to get the direct audio stream URL.
+    Hierarchy: 1. yt-dlp (Native), 2. Invidious Proxy API
     """
+    # 1. Try yt-dlp first
     ydl_opts = {
         'format': 'bestaudio[ext=m4a]/bestaudio',
         'quiet': True,
@@ -24,10 +32,38 @@ def get_audio_stream_url(url):
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
-            return info.get('url')
+            if info.get('url'):
+                return info.get('url')
     except Exception as e:
-        print(f"yt-dlp error: {str(e)}")
-        return None
+        print(f"yt-dlp native failed: {str(e)}")
+
+    # 2. Fallback to Invidious Proxy
+    video_id = ""
+    if 'youtu.be/' in url:
+        video_id = url.split('/')[-1].split('?')[0]
+    else:
+        match = re.search(r'v=([^&]+)', url)
+        video_id = match.group(1) if match else ""
+
+    if video_id:
+        for instance in INVIDIOUS_INSTANCES:
+            try:
+                # Invidious API documentation: https://github.com/iv-org/documentation/blob/master/api.md
+                api_url = f"{instance}/api/v1/videos/{video_id}"
+                resp = requests.get(api_url, timeout=5)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # Find the best audio format
+                    audio_streams = [f for f in data.get('adaptiveFormats', []) if 'audio' in f.get('type', '').lower()]
+                    if audio_streams:
+                        # Sort by bitrate descending or just take the first m4a if available
+                        audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
+                        return audio_streams[0].get('url')
+            except Exception as e:
+                print(f"Invidious instance {instance} failed: {str(e)}")
+                continue
+
+    return None
 
 @app.route('/api/extract', methods=['POST'])
 def extract():
@@ -49,12 +85,11 @@ def extract():
                     "stream_url": stream_url
                 })
             else:
-                return jsonify({"status": "error", "message": "Could not extract stream URL."}), 500
+                return jsonify({"status": "error", "message": "Could not extract stream URL via any method."}), 500
         
-        return jsonify({"status": "error", "message": "Invalid YouTube URL provided."}), 400
+        return jsonify({"status": "error", "message": "Invalid YouTube URL."}), 400
         
     except Exception as e:
-        print(f"Extraction error: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':

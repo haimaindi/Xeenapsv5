@@ -1,4 +1,3 @@
-
 import { LibraryItem } from "../types";
 import { callAiProxy } from "./gasService";
 
@@ -14,16 +13,25 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
     const prompt = `ACT AS AN EXPERT SENIOR ACADEMIC LIBRARIAN. 
     EXTRACT DATA FROM THE PROVIDED TEXT AND RETURN IN RAW JSON FORMAT ONLY.
 
+    --- SPECIAL LOGIC FOR YOUTUBE VIDEOS ---
+    IF the text snippet begins with "YOUTUBE_METADATA:" or contains a YouTube transcript:
+    - "category": MUST be exactly "Video".
+    - "publisher": MUST be exactly "YouTube".
+    - "author": Use the "Channel" name identified in the metadata.
+    - "year": Identify the publication year from content if available, otherwise leave empty.
+    - "inTextAPA", "inTextHarvard", "inTextChicago", "bibAPA", "bibHarvard", "bibChicago": MUST BE NULL OR EMPTY STRING. Do not generate citations for YouTube videos.
+    ----------------------------------------
+
     SCOPE LIMITATION (CRITICAL):
     - ANALYZE ONLY: title, topic, subTopic, authors, publisher, year, keywords, labels, and all 6 citation fields.
     - DO NOT analyze: researchMethodology, abstract, summary, strength, weakness, unfamiliarTerminology, supportingReferences, videoRecommendation, quickTipsForYou.
 
     CRITICAL INSTRUCTION FOR ROBUSTNESS:
     1. COMPLETE FIELDS (NO TRUNCATION):
-       - "title": Full, official academic title.
-       - "authors": List of all full names found.
-       - "publisher": MANDATORY. Identify ACCURATELY the complete Publisher Name First. If publisher is not found then Identify ACCURATELY the complete Journal Name. Look carefully at the entire snippet.
-       - "bibAPA", "bibHarvard", "bibChicago": COMPLETE bibliographic entries. Include full titles, full journal names, volume, issue, page ranges, and DOI. NEVER shorten.
+       - "title": Full, official academic or video title.
+       - "authors": List of all full names found. For videos, use the Channel Name as the primary author.
+       - "publisher": Identify ACCURATELY. If YouTube, use "YouTube". Otherwise, identify complete Journal/Publisher.
+       - "bibAPA", "bibHarvard", "bibChicago": COMPLETE bibliographic entries (ignored for videos).
     
     2. CONCISE FIELDS:
        - "topic": Exactly 2 words describing the main field.
@@ -32,7 +40,7 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
        - "labels": Exactly 3 thematic labels extracted from content.
        - "year": Accurately identify the exact year of publication from the source.
 
-    3. STYLE COMPLIANCE: 
+    3. STYLE COMPLIANCE (NON-VIDEO): 
        - inTextAPA: (Author, Year)
        - inTextHarvard: (Author, Year)
        - inTextChicago: (Author Year)
@@ -40,10 +48,10 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
     EXPECTED JSON SCHEMA:
     {
       "title": "Full Academic Title",
-      "authors": ["Full Name 1", "Full Name 2"],
+      "authors": ["Full Name 1"],
       "year": "YYYY",
       "publisher": "Full Journal/Publisher Name",
-      "category": "e.g., Original Research",
+      "category": "e.g., Original Research or Video",
       "topic": "Two Words",
       "subTopic": "Two Words",
       "keywords": ["keyword1", "keyword2", "keyword3", "keyword4", "keyword5"],

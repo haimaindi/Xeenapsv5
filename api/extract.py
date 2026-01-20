@@ -1,11 +1,12 @@
-
 import io
 import re
+import requests
 from pypdf import PdfReader
 from pptx import Presentation
 from docx import Document
 import openpyxl
 from flask import Flask, request, jsonify
+from youtube_transcript_api import YouTubeTranscriptApi
 
 app = Flask(__name__)
 
@@ -29,6 +30,37 @@ def clean_text(text):
     # Clean weird spacing and extra newlines
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
+
+def extract_youtube_data(url):
+    video_id = None
+    if 'youtu.be/' in url:
+        video_id = url.split('/')[-1].split('?')[0]
+    elif 'youtube.com/watch' in url:
+        match = re.search(r'v=([^&]+)', url)
+        if match:
+            video_id = match.group(1)
+    
+    if not video_id:
+        return "Error: Could not extract Video ID from URL."
+
+    metadata_text = ""
+    try:
+        # Use oEmbed for metadata (Title, Author)
+        oembed_url = f"https://www.youtube.com/oembed?url={url}&format=json"
+        resp = requests.get(oembed_url, timeout=5).json()
+        metadata_text = f"YOUTUBE_METADATA:\nTitle: {resp.get('title')}\nChannel: {resp.get('author_name')}\n"
+    except Exception as e:
+        metadata_text = "YOUTUBE_METADATA: (Metadata retrieval failed)\n"
+
+    transcript_text = ""
+    try:
+        # Fetch transcript in Indonesian or English
+        transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
+        transcript_text = " ".join([t['text'] for t in transcript_list])
+    except Exception as e:
+        transcript_text = f"(No transcript available for this video. Reason: {str(e)})"
+
+    return f"{metadata_text}\nTRANSCRIPT CONTENT:\n{transcript_text}"
 
 def extract_metadata_heuristics(full_text, filename):
     text_str = str(full_text)
@@ -75,8 +107,22 @@ def process_extracted_text(full_text, title):
 @app.route('/api/extract', methods=['POST'])
 def extract():
     try:
+        # 1. Handle JSON (Direct URL Extraction, e.g., for YouTube)
+        if request.is_json:
+            data = request.get_json()
+            url = data.get('url')
+            if url and ('youtube.com' in url or 'youtu.be' in url):
+                result_text = extract_youtube_data(url)
+                return jsonify({"status": "success", "data": result_text})
+        
+        # 2. Handle File Uploads (Standard Logic)
         if 'file' not in request.files:
-            return jsonify({"status": "error", "message": "No file part"}), 400
+            # Fallback check for form data if not in request.files
+            url = request.form.get('url')
+            if url and ('youtube.com' in url or 'youtu.be' in url):
+                result_text = extract_youtube_data(url)
+                return jsonify({"status": "success", "data": result_text})
+            return jsonify({"status": "error", "message": "No file or URL part"}), 400
         
         file = request.files['file']
         if file.filename == '':

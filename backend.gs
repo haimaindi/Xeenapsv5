@@ -1,7 +1,5 @@
 /**
- * XEENAPS PKM - SECURE BACKEND V28 (3-TIER WEB EXTRACTION)
- * Consolidated Extraction with Metadata Injection.
- * Logic: 1. Google Native -> 2. Simple Fetch -> 3. ScraperStack (New) -> 4. ScrapingAnt (Fallback)
+ * XEENAPS PKM - SECURE BACKEND V31 (ULTRA-COMPLETE EXTRACTION)
  */
 
 const CONFIG = {
@@ -13,6 +11,8 @@ const CONFIG = {
     KEYS: '1QRzqKe42ck2HhkA-_yAGS-UHppp96go3s5oJmlrwpc0',
     AI_CONFIG: '1RVYM2-U5LRb8S8JElRSEv2ICHdlOp9pnulcAM8Nd44s'
   },
+  // SET YOUR VERCEL PYTHON API URL HERE
+  PYTHON_API_URL: 'https://xeenaps-pkm.vercel.app/api/extract',
   SCHEMAS: {
     LIBRARY: [
       'id', 'title', 'type', 'category', 'topic', 'subTopic', 'author', 'authors', 'publisher', 'year', 
@@ -109,24 +109,39 @@ function getFileIdFromUrl(url) {
 }
 
 /**
- * Enhanced 3-Tier URL Extraction
+ * ULTRA-COMPLETE handleUrlExtraction
  */
 function handleUrlExtraction(url) {
+  // LAYER 0: YouTube Extraction via Python API (Vercel)
+  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+    const pythonUrl = CONFIG.PYTHON_API_URL;
+    if (pythonUrl && !pythonUrl.includes('your-vercel-domain')) {
+      try {
+        const response = UrlFetchApp.fetch(pythonUrl, {
+          method: 'post',
+          contentType: 'application/json',
+          payload: JSON.stringify({ url: url }),
+          muteHttpExceptions: true
+        });
+        if (response.getResponseCode() === 200) {
+          const json = JSON.parse(response.getContentText());
+          if (json.status === 'success') return json.data;
+        }
+      } catch (e) {
+        console.log("YouTube Python Extraction Error: " + e.message);
+      }
+    }
+  }
+
   const driveId = getFileIdFromUrl(url);
   
-  // 1. Google Drive / Docs Handler (Native Access)
+  // LAYER 1: Google Drive / Docs (Always First)
   if (driveId && (url.includes('drive.google.com') || url.includes('docs.google.com'))) {
     try {
       const fileMeta = Drive.Files.get(driveId);
       const mimeType = fileMeta.mimeType;
       const isNative = mimeType.includes('google-apps');
       
-      let systemMetaPrefix = `DOCUMENT_TITLE: ${fileMeta.name}\n`;
-      if (fileMeta.owners && fileMeta.owners.length > 0) {
-        systemMetaPrefix += `AUTHOR_NAME: ${fileMeta.owners[0].displayName}\n`;
-      }
-      systemMetaPrefix += `FORMAT: ${mimeType}\n\n`;
-
       let rawContent = "";
       if (isNative) {
         if (mimeType.includes('document')) {
@@ -143,71 +158,100 @@ function handleUrlExtraction(url) {
         rawContent = extractTextContent(blob, mimeType);
       }
       
-      if (rawContent.trim().length > 10) {
-        return systemMetaPrefix + rawContent;
-      }
-    } catch (e) {
-      console.log("Drive access failed: " + e.message);
+      if (rawContent && rawContent.trim().length > 10) return rawContent;
+    } catch (e) { console.log("Drive failed: " + e.message); }
+  }
+
+  // LAYER 2: Specialized Wikipedia API (Solusi B)
+  if (url.includes('wikipedia.org')) {
+    const wikiMatch = url.match(/([a-z]+)\.wikipedia\.org\/wiki\/(.+)/i);
+    if (wikiMatch) {
+      try {
+        const lang = wikiMatch[1];
+        const title = wikiMatch[2];
+        const apiUrl = `https://${lang}.wikipedia.org/api/rest_v1/page/mobile-html/${title}`;
+        const wikiRes = UrlFetchApp.fetch(apiUrl, { muteHttpExceptions: true });
+        if (wikiRes.getResponseCode() === 200) {
+          return `SOURCE: Wikipedia (${lang})\n\n` + cleanHtml(wikiRes.getContentText());
+        }
+      } catch(e) { console.log("Wiki API failed"); }
     }
   }
 
-  // 2. LAPIS 1: Simple Fetch (UrlFetchApp) - Gratis & Lengkap
-  let simpleHtml = "";
+  // LAYER 3: Native Fetch with Smart Selection (Solusi A)
+  let nativeContent = "";
   try {
-    const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true });
-    simpleHtml = response.getContentText();
-    const responseCode = response.getResponseCode();
+    const response = UrlFetchApp.fetch(url, { 
+      muteHttpExceptions: true,
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" }
+    });
     
-    // Check if content is valid (not blocked, reasonable length)
-    if (responseCode === 200 && !isBlocked(simpleHtml)) {
-      const cleanText = cleanHtml(simpleHtml);
-      if (cleanText.length > 800) {
-        return extractWebMetadata(simpleHtml) + "\n\n" + cleanText;
+    if (response.getResponseCode() === 200) {
+      const html = response.getContentText();
+      if (!isBlocked(html)) {
+        const metadata = extractWebMetadata(html);
+        const body = smartCleanHtml(html); // Use Smarter Selector
+        nativeContent = metadata + "\n\n" + body;
+
+        // If body is substantial (> 800 chars), we stop here
+        if (body.length > 800) return nativeContent;
       }
     }
-  } catch (e) {
-    console.log("Lapis 1 failed: " + e.message);
-  }
+  } catch (e) { console.log("Native fetch error: " + e.message); }
 
-  // 3. LAPIS 2: ScraperStack - New Layer for JS Rendering & Basic Protection
-  const scraperKey = getScraperStackKey();
-  if (scraperKey) {
+  // LAYER 4: ScrapingAnt (Solusi C - Conditional JS Rendering)
+  const saKey = getScrapingAntKey();
+  if (saKey) {
     try {
-      const scraperUrl = `http://api.scraperstack.com/scrape?access_key=${scraperKey}&url=${encodeURIComponent(url)}&render_js=1`;
-      const response = UrlFetchApp.fetch(scraperUrl, { muteHttpExceptions: true });
-      const html = response.getContentText();
+      // Step 1: Standard Hemat
+      let saUrl = `https://api.scrapingant.com/v2/general?url=${encodeURIComponent(url)}&x-api-key=${saKey}`;
+      let response = UrlFetchApp.fetch(saUrl, { muteHttpExceptions: true });
+      let html = response.getContentText();
+      let body = smartCleanHtml(html);
+
+      // Step 2: Emergency JS Rendering (If standard is too short)
+      if (body.length < 500 && response.getResponseCode() === 200) {
+        console.log("Upgrading to JS Rendering for completeness...");
+        saUrl += "&browser=true&block_ads=true";
+        response = UrlFetchApp.fetch(saUrl, { muteHttpExceptions: true });
+        html = response.getContentText();
+        body = smartCleanHtml(html);
+      }
+      
       if (response.getResponseCode() === 200 && !isBlocked(html)) {
-        return extractWebMetadata(html) + "\n\n" + cleanHtml(html);
+        return extractWebMetadata(html) + "\n\n" + body;
       }
-    } catch (e) {
-      console.log("Lapis 2 failed: " + e.message);
+    } catch (e) { console.log("ScrapingAnt failed"); }
+  }
+
+  // FINAL FALLBACK
+  return nativeContent || "Could not extract complete content from this URL.";
+}
+
+/**
+ * SMART SELECTOR LOGIC (Solusi A)
+ */
+function smartCleanHtml(html) {
+  if (!html) return "";
+  
+  // Attempt to find content in priority tags
+  const contentTags = [
+    /<article[^>]*>([\s\S]*?)<\/article>/i,
+    /<main[^>]*>([\s\S]*?)<\/main>/i,
+    /<div[^>]*id=["'](?:content|main-content|article-body|post-body|entry-content)["'][^>]*>([\s\S]*?)<\/div>/i,
+    /<div[^>]*class=["'](?:content|article|post-text|main-article)["'][^>]*>([\s\S]*?)<\/div>/i
+  ];
+
+  for (let regex of contentTags) {
+    const match = html.match(regex);
+    if (match && match[1].length > 400) {
+      return cleanHtml(match[1]);
     }
   }
 
-  // 4. LAPIS 3: ScrapingAnt Bypass - Fallback for Residential Proxy Needs
-  const antKey = getScrapingAntKey();
-  if (antKey) {
-    try {
-      const antUrl = `https://api.scrapingant.com/v2/general?url=${encodeURIComponent(url)}&x-api-key=${antKey}&browser=true&proxy_type=residential`;
-      const response = UrlFetchApp.fetch(antUrl, { muteHttpExceptions: true });
-      const html = response.getContentText();
-      if (response.getResponseCode() === 200) {
-        return extractWebMetadata(html) + "\n\n" + cleanHtml(html);
-      }
-    } catch (e) {
-      console.log("Lapis 3 failed: " + e.message);
-    }
-  }
-
-  // Final fallback: jika minimal ada teks yang didapat dari Lapis 1
-  if (simpleHtml) {
-    const lastResortText = cleanHtml(simpleHtml);
-    if (lastResortText.length > 300) {
-      return extractWebMetadata(simpleHtml) + "\n\n" + lastResortText;
-    }
-  }
-
-  throw new Error("Website extraction failed. The site might be highly protected.");
+  // If no main container found, clean the whole body
+  const bodyMatch = html.match(/<body[^>]*>([\s\S]*?)<\/body>/i);
+  return cleanHtml(bodyMatch ? bodyMatch[1] : html);
 }
 
 function extractWebMetadata(html) {
@@ -222,26 +266,23 @@ function extractWebMetadata(html) {
 }
 
 function isBlocked(text) {
-  if (!text || text.length < 350) return true;
-  const blockedKeywords = ["access denied", "cloudflare", "security check", "forbidden", "captcha", "bot detection", "just a moment", "robot check", "security challenge"];
+  if (!text || text.length < 200) return true;
+  const criticalBlocked = ["access denied", "cloudflare", "security check", "captcha", "bot detection", "robot check"];
   const textLower = text.toLowerCase();
-  return blockedKeywords.some(keyword => textLower.includes(keyword));
+  if (text.length < 2000) {
+     return criticalBlocked.some(keyword => textLower.includes(keyword));
+  }
+  return false;
 }
 
 function cleanHtml(html) {
   return html.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "")
              .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "")
+             .replace(/<nav\b[^>]*>([\s\S]*?)<\/nav>/gim, "") // Specifically remove nav tags
+             .replace(/<footer\b[^>]*>([\s\S]*?)<\/footer>/gim, "") // Specifically remove footer tags
              .replace(/<[^>]*>/g, " ")
              .replace(/\s+/g, " ")
              .trim();
-}
-
-function getScraperStackKey() {
-  try {
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.KEYS);
-    const sheet = ss.getSheetByName("ScraperStack");
-    return sheet ? sheet.getRange("A1").getValue().toString().trim() : null;
-  } catch (e) { return null; }
 }
 
 function getScrapingAntKey() {

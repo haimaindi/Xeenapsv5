@@ -1,6 +1,7 @@
 /**
- * XEENAPS PKM - ACADEMIC IDENTIFIER MODULE (SMART ROUTER V3)
- * Advanced Multi-API Cascading, Robust Google Books Parsing & Date Standardization
+ * XEENAPS PKM - ACADEMIC IDENTIFIER MODULE (SMART ROUTER V5)
+ * Exclusive OpenLibrary for Books, Crossref/OpenAlex for Journals
+ * Removed Google Books API, Fixed Search Loops
  */
 
 function handleIdentifierSearch(idValue) {
@@ -21,9 +22,7 @@ function handleIdentifierSearch(idValue) {
   // 2. ISBN DETECTION
   const cleanIsbn = val.replace(/[-\s]/g, '');
   if (cleanIsbn.match(/^(978|979)\d{10,11}$/) || (cleanIsbn.length === 10 && cleanIsbn.match(/^\d{9}[\dXx]$/))) {
-    const ol = fetchOpenLibraryMetadata(cleanIsbn);
-    const gb = fetchGoogleBooksMetadata(cleanIsbn, true);
-    return mergeMetadata(ol, gb);
+    return fetchOpenLibraryMetadata(cleanIsbn);
   }
 
   // 3. PMID DETECTION
@@ -42,56 +41,63 @@ function handleIdentifierSearch(idValue) {
     return fetchCrossrefMetadata(null, val); 
   }
 
-  // 6. FALLBACK: Search by Title (Cascading Crossref + Google Books)
+  // 6. FALLBACK: Search by Title (Verbatim First, then Best Effort Across APIs)
   if (val.length > 5) {
     const crossrefSearch = fetchCrossrefMetadata(null, val);
-    const gbSearch = fetchGoogleBooksMetadata(val, false);
-    return mergeMetadata(crossrefSearch, gbSearch);
+    const alexSearch = searchOpenAlexByTitle(val);
+    const olSearch = searchOpenLibraryByTitle(val);
+
+    // Identify if any is a verbatim match
+    const searchResults = [crossrefSearch, alexSearch, olSearch];
+    const verbatimMatch = searchResults.find(r => 
+      r.status === 'success' && 
+      r.data.title.toLowerCase().trim() === val.toLowerCase().trim()
+    );
+
+    if (verbatimMatch) return verbatimMatch;
+
+    // If no verbatim match, return the best effort (closest match)
+    // Preference: Crossref (Journal) -> OpenAlex (Academic) -> OpenLibrary (Book)
+    if (crossrefSearch.status === 'success') return crossrefSearch;
+    if (alexSearch.status === 'success') return alexSearch;
+    if (olSearch.status === 'success') return olSearch;
   }
 
-  return { status: 'error', message: 'Identifier format not recognized.' };
+  return { status: 'error', message: 'No data found. Please provide a valid identifier.' };
 }
 
 /**
  * Standardized Date Parser for XEENAPS
- * Converts YYYY-MM-DD, YYYY-MM, or space separated dates to "DD MMM YYYY"
  */
 function standardizeFullDate(dateStr) {
   if (!dateStr) return "";
   const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   
   try {
-    // Check for YYYY-MM-DD or YYYY-MM
-    if (dateStr.includes("-")) {
-      const parts = dateStr.split("-");
-      const y = parts[0];
-      const m = parseInt(parts[1]);
-      const d = parts[2] ? parts[2].padStart(2, '0') : "01";
-      if (m >= 1 && m <= 12) return `${d} ${months[m-1]} ${y}`;
-      return y;
+    const s = dateStr.toString().trim();
+    
+    // YYYY-MM-DD
+    if (s.match(/^\d{4}-\d{1,2}-\d{1,2}$/)) {
+      const parts = s.split("-");
+      const mIdx = parseInt(parts[1]) - 1;
+      return `${parts[2].padStart(2, '0')} ${months[mIdx] || 'Jan'} ${parts[0]}`;
     }
     
-    // Check for space separated (e.g. "2024 Aug 15")
-    if (dateStr.includes(" ")) {
-      const parts = dateStr.split(" ").filter(p => p.length > 0);
-      if (parts.length >= 2) {
-        // Handle "YYYY MMM DD" or "YYYY MMM"
-        const y = parts[0].match(/\d{4}/) ? parts[0] : parts[parts.length-1];
-        const m = parts.find(p => months.includes(p)) || months[0];
-        const d = parts.find(p => p.match(/^\d{1,2}$/))?.padStart(2, '0') || "01";
-        return `${d} ${m} ${y}`;
-      }
+    // Just YYYY
+    if (s.match(/^\d{4}$/)) return `01 Jan ${s}`;
+    
+    // Month YYYY or Day Month YYYY (e.g., "August 15, 2024")
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      return `${d.getDate().toString().padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
     }
-
-    // Just Year
-    if (dateStr.match(/^\d{4}$/)) return `01 Jan ${dateStr}`;
   } catch (e) {}
   
   return dateStr;
 }
 
 /**
- * Merges metadata from two sources, picking the most complete fields.
+ * Merges metadata from two sources.
  */
 function mergeMetadata(sourceA, sourceB) {
   if (sourceA.status !== 'success' && sourceB.status !== 'success') return sourceA;
@@ -103,15 +109,15 @@ function mergeMetadata(sourceA, sourceB) {
   const merged = { ...a };
 
   Object.keys(b).forEach(key => {
-    // If field in A is empty/short but B has better data, use B
     const valA = String(merged[key] || "");
     const valB = String(b[key] || "");
     
+    // Prefer longer/fuller strings
     if (valA.length < valB.length) {
       merged[key] = b[key];
     }
     
-    // Handle Authors specifically (prefer longer array)
+    // Special handling for authors
     if (key === 'authors' && Array.isArray(b.authors) && b.authors.length > (Array.isArray(a.authors) ? a.authors.length : 0)) {
       merged.authors = b.authors;
     }
@@ -121,7 +127,35 @@ function mergeMetadata(sourceA, sourceB) {
 }
 
 /**
- * OPENALEX API - Powerful Crossref alternative for DOIs
+ * OPENALEX SEARCH BY TITLE
+ */
+function searchOpenAlexByTitle(title) {
+  try {
+    const url = `https://api.openalex.org/works?search=${encodeURIComponent(title)}&per_page=1`;
+    const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    if (res.getResponseCode() !== 200) return { status: 'error' };
+
+    const data = JSON.parse(res.getContentText());
+    if (!data.results || data.results.length === 0) return { status: 'error' };
+
+    const item = data.results[0];
+    return {
+      status: 'success',
+      data: {
+        title: item.title || "",
+        authors: (item.authorships || []).map(a => a.author.display_name),
+        publisher: item.primary_location?.source?.display_name || "",
+        journalName: item.primary_location?.source?.display_name || "",
+        year: item.publication_year ? item.publication_year.toString() : "",
+        fullDate: standardizeFullDate(item.publication_date),
+        doi: item.doi ? item.doi.replace('https://doi.org/', '') : ""
+      }
+    };
+  } catch (e) { return { status: 'error' }; }
+}
+
+/**
+ * OPENALEX API - Fallback for Journals
  */
 function fetchOpenAlexMetadata(doi) {
   try {
@@ -150,38 +184,7 @@ function fetchOpenAlexMetadata(doi) {
 }
 
 /**
- * GOOGLE BOOKS API - Refined for robustness
- */
-function fetchGoogleBooksMetadata(query, isIsbn) {
-  try {
-    const q = isIsbn ? `isbn:${query}` : `intitle:${query}`;
-    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1&printType=books`;
-    const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
-    const data = JSON.parse(res.getContentText());
-    
-    if (!data.items || data.items.length === 0) return { status: 'error' };
-    const book = data.items[0].volumeInfo;
-
-    const pubDate = book.publishedDate || "";
-    const year = pubDate.split('-')[0];
-
-    return {
-      status: 'success',
-      data: {
-        title: book.title || "",
-        authors: book.authors || [],
-        publisher: book.publisher || "",
-        year: year,
-        fullDate: standardizeFullDate(pubDate),
-        isbn: (book.industryIdentifiers || []).find(id => id.type.includes('ISBN'))?.identifier || "",
-        pages: book.pageCount ? book.pageCount.toString() : ""
-      }
-    };
-  } catch (e) { return { status: 'error' }; }
-}
-
-/**
- * CROSSREF API
+ * CROSSREF API - Verbatim Matcher
  */
 function fetchCrossrefMetadata(doi, queryTitle) {
   try {
@@ -189,44 +192,101 @@ function fetchCrossrefMetadata(doi, queryTitle) {
     if (doi) {
       url += encodeURIComponent(doi);
     } else {
-      url += "?query.bibliographic=" + encodeURIComponent(queryTitle) + "&rows=1";
+      url += "?query.bibliographic=" + encodeURIComponent(queryTitle) + "&rows=5";
     }
 
     const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
     if (res.getResponseCode() !== 200) return { status: 'error' };
 
     const data = JSON.parse(res.getContentText());
-    const item = doi ? data.message : (data.message.items && data.message.items[0]);
-    if (!item) return { status: 'error' };
-
-    let rawDate = "";
-    if (item.issued && item.issued["date-parts"] && item.issued["date-parts"][0]) {
-      const p = item.issued["date-parts"][0];
-      rawDate = p.length === 3 ? `${p[0]}-${p[1]}-${p[2]}` : (p.length === 2 ? `${p[0]}-${p[1]}` : `${p[0]}`);
+    if (doi) {
+      return parseCrossrefItem(data.message, doi);
     }
 
+    const items = data.message.items || [];
+    if (items.length === 0) return { status: 'error' };
+
+    // 1. Verbatim Match first
+    let selectedItem = items.find(item => {
+      const title = (item.title && item.title[0]) || "";
+      return title.toLowerCase().trim() === queryTitle.toLowerCase().trim();
+    });
+
+    // 2. Filter "Correction to:"
+    if (!selectedItem) {
+      selectedItem = items.find(item => {
+        const title = (item.title && item.title[0]) || "";
+        return !title.toLowerCase().startsWith("correction to:");
+      });
+    }
+
+    if (!selectedItem) selectedItem = items[0];
+    return parseCrossrefItem(selectedItem, null);
+  } catch (e) { return { status: 'error' }; }
+}
+
+function parseCrossrefItem(item, doi) {
+  let rawDate = "";
+  if (item.issued && item.issued["date-parts"] && item.issued["date-parts"][0]) {
+    const p = item.issued["date-parts"][0];
+    rawDate = p.length === 3 ? `${p[0]}-${p[1]}-${p[2]}` : (p.length === 2 ? `${p[0]}-${p[1]}` : `${p[0]}`);
+  }
+
+  return {
+    status: 'success',
+    data: {
+      title: (item.title && item.title[0]) || "",
+      authors: (item.author || []).map(a => (a.given ? a.given + " " : "") + (a.family || "")),
+      publisher: item.publisher || "",
+      journalName: (item["container-title"] && item["container-title"][0]) || "",
+      year: (item.issued?.["date-parts"]?.[0]?.[0] || "").toString(),
+      fullDate: standardizeFullDate(rawDate),
+      volume: item.volume || "",
+      issue: item.issue || "",
+      pages: item.page || "",
+      doi: item.DOI || doi || "",
+      issn: (item.ISSN && item.ISSN[0]) || "",
+      isbn: (item.ISBN && item.ISBN[0]) || ""
+    }
+  };
+}
+
+/**
+ * OPENLIBRARY SEARCH BY TITLE
+ */
+function searchOpenLibraryByTitle(title) {
+  try {
+    const url = `https://openlibrary.org/search.json?title=${encodeURIComponent(title)}&limit=5`;
+    const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    const data = JSON.parse(res.getContentText());
+    
+    if (!data.docs || data.docs.length === 0) return { status: 'error' };
+
+    // Find best match that isn't a correction
+    const doc = data.docs.find(d => !(d.title || "").toLowerCase().startsWith("correction to:")) || data.docs[0];
+    
+    // Get full metadata using the first ISBN found in search result
+    if (doc.isbn && doc.isbn.length > 0) {
+      return fetchOpenLibraryMetadata(doc.isbn[0]);
+    }
+
+    // Fallback using search document fields if no full metadata fetch possible
     return {
       status: 'success',
       data: {
-        title: (item.title && item.title[0]) || "",
-        authors: (item.author || []).map(a => (a.given ? a.given + " " : "") + (a.family || "")),
-        publisher: item.publisher || "",
-        journalName: (item["container-title"] && item["container-title"][0]) || "",
-        year: (item.issued?.["date-parts"]?.[0]?.[0] || "").toString(),
-        fullDate: standardizeFullDate(rawDate),
-        volume: item.volume || "",
-        issue: item.issue || "",
-        pages: item.page || "",
-        doi: item.DOI || doi || "",
-        issn: (item.ISSN && item.ISSN[0]) || "",
-        isbn: (item.ISBN && item.ISBN[0]) || ""
+        title: doc.title || "",
+        authors: doc.author_name || [],
+        publisher: (doc.publisher || [])[0] || "",
+        year: (doc.first_publish_year || "").toString(),
+        fullDate: doc.first_publish_year ? `01 Jan ${doc.first_publish_year}` : "",
+        isbn: (doc.isbn || [])[0] || ""
       }
     };
   } catch (e) { return { status: 'error' }; }
 }
 
 /**
- * OPENLIBRARY API
+ * OPENLIBRARY API (By ISBN)
  */
 function fetchOpenLibraryMetadata(isbn) {
   try {
@@ -253,7 +313,7 @@ function fetchOpenLibraryMetadata(isbn) {
 }
 
 /**
- * PUBMED API (NCBI)
+ * PUBMED API
  */
 function fetchPubMedMetadata(pmid) {
   try {
@@ -261,7 +321,6 @@ function fetchPubMedMetadata(pmid) {
     const res = UrlFetchApp.fetch(summaryUrl);
     const data = JSON.parse(res.getContentText());
     const result = data.result[pmid];
-
     if (!result) return { status: 'error' };
 
     return {

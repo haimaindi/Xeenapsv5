@@ -152,7 +152,11 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             }));
           }
         } catch (e: any) {
-          showXeenapsAlert({ icon: 'error', title: 'Search Failed', text: e.message || 'ID not found.' });
+          showXeenapsAlert({ 
+            icon: 'error', 
+            title: 'SEARCH FAILED', 
+            text: 'No Data Found, please give right identifier' 
+          });
         } finally {
           setExtractionStage('IDLE');
         }
@@ -175,10 +179,10 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
           setFormData(prev => ({
             ...prev,
             title: aiMeta.title || result.title || prev.title,
-            year: aiMeta.year || result.year || prev.year,
-            publisher: aiMeta.publisher || result.publisher || prev.publisher,
-            doi: aiMeta.doi || prev.doi,
             authors: (aiMeta.authors && aiMeta.authors.length > 0) ? aiMeta.authors : (result.authors || prev.authors),
+            publisher: aiMeta.publisher || result.publisher || prev.publisher,
+            year: aiMeta.year || result.year || prev.year,
+            doi: aiMeta.doi || prev.doi,
             keywords: (aiMeta.keywords && aiMeta.keywords.length > 0) ? aiMeta.keywords : (result.keywords || prev.keywords),
             labels: (aiMeta.labels && aiMeta.labels.length > 0) ? aiMeta.labels : prev.labels,
             type: (aiMeta.type as LibraryType) || (result.type as LibraryType) || prev.type,
@@ -219,9 +223,14 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         const b64 = await new Promise<string>(r => { reader.onload = () => r((reader.result as string).split(',')[1]); reader.readAsDataURL(file); });
         fileUploadData = { fileName: file.name, mimeType: file.type, fileData: b64 };
       }
+      
+      const generatedId = typeof crypto !== 'undefined' && crypto.randomUUID 
+        ? crypto.randomUUID() 
+        : (Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+
       const newItem: any = { 
         ...formData, 
-        id: crypto.randomUUID(), 
+        id: generatedId, 
         createdAt: new Date().toISOString(), 
         updatedAt: new Date().toISOString(), 
         source: formData.addMethod === 'LINK' ? SourceType.LINK : SourceType.FILE, 
@@ -262,7 +271,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     setFormData(prev => ({ ...prev, fullDate: formatted }));
   };
 
-  // Convert "DD MMM YYYY" back to "YYYY-MM-DD" for the input[type="date"] display
   const getHtmlDateValue = (fullDate: string) => {
     if (!fullDate) return "";
     try {
@@ -271,9 +279,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const m = months.indexOf(parts[1]);
         if (m === -1) return "";
-        // Month is 0-indexed in JS Date
         const d = new Date(parseInt(parts[2]), m, parseInt(parts[0]));
-        // Adjust for timezone offset to prevent date shift
         const offset = d.getTimezoneOffset();
         const adjustedDate = new Date(d.getTime() - (offset * 60 * 1000));
         return adjustedDate.toISOString().split('T')[0];
@@ -296,7 +302,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       } />
       <FormContentArea>
         <form onSubmit={handleSubmit} className="space-y-8">
-          {/* Main Input Area */}
           <div className="space-y-3">
             {formData.addMethod === 'LINK' ? (
               <FormField label="Reference URL" required error={!formData.url}>
@@ -334,7 +339,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
                 </label>
               </FormField>
             )}
-            {/* Status indicators moved directly under input */}
             {isExtracting && (
               <div className="flex items-center gap-2 px-2 animate-in fade-in slide-in-from-top-1 duration-300">
                 <SparklesIcon className="w-4 h-4 text-[#FED400] animate-pulse" />
@@ -347,7 +351,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             )}
           </div>
 
-          {/* Classification */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField label="Type" required error={!formData.type}><FormDropdown value={formData.type} onChange={(v) => setFormData({...formData, type: v as LibraryType})} options={Object.values(LibraryType)} placeholder="Select type..." disabled={isFormDisabled} /></FormField>
             <FormField label="Category" required error={!formData.category}><FormDropdown value={formData.category} onChange={(v) => setFormData({...formData, category: v})} options={['Original Research', 'Review', 'Case Study', 'Technical Report', 'Other']} placeholder="Select category..." disabled={isFormDisabled} /></FormField>
@@ -357,11 +360,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             <FormField label="Sub Topic"><FormDropdown value={formData.subTopic} onChange={(v) => setFormData({...formData, subTopic: v})} options={existingValues.subTopics} placeholder="Specific area..." disabled={isFormDisabled} /></FormField>
           </div>
 
-          {/* Basic Metadata Section (Frozen during extraction) */}
           <FormField label="Title"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-bold text-[#004A74]" placeholder="Enter title..." value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} disabled={isFormDisabled} /></FormField>
           <FormField label="Author(s)"><FormDropdown isMulti multiValues={formData.authors} onAddMulti={(v) => setFormData({...formData, authors: [...formData.authors, v]})} onRemoveMulti={(v) => setFormData({...formData, authors: formData.authors.filter(a => a !== v)})} options={existingValues.allAuthors} placeholder="Identify authors..." value="" onChange={() => {}} disabled={isFormDisabled} /></FormField>
 
-          {/* Publisher & Journal Section (Frozen during extraction) */}
           <div className="space-y-6 bg-gray-50/30 p-6 rounded-[2rem] border border-gray-100">
             <FormField label="Publisher"><FormDropdown value={formData.publisher} onChange={(v) => setFormData({...formData, publisher: v})} options={existingValues.publishers} placeholder="Publisher name..." disabled={isFormDisabled} /></FormField>
             <FormField label="Journal"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm font-medium" placeholder="Journal name..." value={formData.journalName} onChange={(e) => setFormData({...formData, journalName: e.target.value})} disabled={isFormDisabled} /></FormField>
@@ -372,7 +373,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             </div>
           </div>
 
-          {/* Timing Section - YEAR and DATE (Restricted and Native Modal) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField label="Year (YYYY)">
               <input 
@@ -385,7 +385,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
                   if (val.length <= 4) setFormData({...formData, year: val});
                 }} 
                 onKeyDown={(e) => {
-                  // Prevent non-numeric characters e, +, -, .
                   if (['e', '+', '-', '.'].includes(e.key.toLowerCase())) {
                     e.preventDefault();
                   }
@@ -404,13 +403,11 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             </FormField>
           </div>
 
-          {/* Tags & Labels */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField label="Keywords"><FormDropdown isMulti multiValues={formData.keywords} onAddMulti={(v) => setFormData({...formData, keywords: [...formData.keywords, v]})} onRemoveMulti={(v) => setFormData({...formData, keywords: formData.keywords.filter(a => a !== v)})} options={existingValues.allKeywords} placeholder="Keywords..." value="" onChange={() => {}} disabled={isFormDisabled} /></FormField>
             <FormField label="Labels"><FormDropdown isMulti multiValues={formData.labels} onAddMulti={(v) => setFormData({...formData, labels: [...formData.labels, v]})} onRemoveMulti={(v) => setFormData({...formData, labels: formData.labels.filter(a => a !== v)})} options={existingValues.allLabels} placeholder="Thematic labels..." value="" onChange={() => {}} disabled={isFormDisabled} /></FormField>
           </div>
 
-          {/* Academic Identifiers Grid (Frozen during extraction) */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
             <FormField label="DOI"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="10.xxxx/..." value={formData.doi} onChange={(e) => setFormData({...formData, doi: e.target.value})} disabled={isFormDisabled} /></FormField>
             <FormField label="ISSN"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="XXXX-XXXX" value={formData.issn} onChange={(e) => setFormData({...formData, issn: e.target.value})} disabled={isFormDisabled} /></FormField>

@@ -92,15 +92,26 @@ export const extractFromUrl = async (url: string, onStageChange?: (stage: 'READI
 
 export const callIdentifierSearch = async (idValue: string): Promise<Partial<LibraryItem> | null> => {
   if (!GAS_WEB_APP_URL) throw new Error('GAS_WEB_APP_URL missing.');
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds limit
+
   try {
     const res = await fetch(GAS_WEB_APP_URL, {
       method: 'POST',
       body: JSON.stringify({ action: 'searchByIdentifier', idValue }),
+      signal: controller.signal
     });
+    clearTimeout(timeoutId);
+    
     const result = await res.json();
     if (result.status === 'success') return result.data;
-    throw new Error(result.message || 'Search failed.');
-  } catch (error) {
+    throw new Error(result.message || 'No data found.');
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('TIMEOUT');
+    }
     throw error;
   }
 };

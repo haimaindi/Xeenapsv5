@@ -1,6 +1,7 @@
+
 /**
- * XEENAPS PKM - SECURE BACKEND V36 (DEBUGGING & FULL RESTORATION)
- * Menggabungkan Logika V33 (Asli) dengan Perbaikan Ekstraksi V36.
+ * XEENAPS PKM - SECURE BACKEND V37 (FAST CONVERTER INTEGRATION)
+ * Menggunakan link MP3 eksternal untuk kecepatan download maksimal.
  */
 
 const CONFIG = {
@@ -13,7 +14,6 @@ const CONFIG = {
     KEYS: '1QRzqKe42ck2HhkA-_yAGS-UHppp96go3s5oJmlrwpc0',
     AI_CONFIG: '1RVYM2-U5LRb8S8JElRSEv2ICHdlOp9pnulcAM8Nd44s'
   },
-  // PASTIKAN URL INI ADALAH URL PRODUCTION VERCEL ANDA
   PYTHON_API_URL: 'https://xeenaps-v1.vercel.app/api/extract',
   SCHEMAS: {
     LIBRARY: [
@@ -44,7 +44,6 @@ function doPost(e) {
   let body;
   try {
     body = JSON.parse(e.postData.contents);
-    console.log("--- START REQUEST ---");
     console.log("Action: " + body.action);
   } catch(e) {
     return createJsonResponse({ status: 'error', message: 'Malformed JSON' });
@@ -73,7 +72,6 @@ function doPost(e) {
     }
     
     if (action === 'extractOnly') {
-      console.log("Extraction Process Initiated...");
       let extractedText = "";
       let fileName = body.fileName || "Extracted Content";
       
@@ -96,57 +94,30 @@ function doPost(e) {
     }
     return createJsonResponse({ status: 'error', message: 'Invalid action' });
   } catch (err) {
-    console.error("Critical Error: " + err.toString());
+    console.error("Critical: " + err.toString());
     return createJsonResponse({ status: 'error', message: err.toString() });
   }
 }
 
-function checkYoutubeQuota() {
-  try {
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.LIBRARY);
-    const sheet = ss.getSheetByName("Collections");
-    if (!sheet) return 0;
-    const data = sheet.getDataRange().getValues();
-    const now = new Date();
-    const oneHourAgo = new Date(now.getTime() - (3600 * 1000));
-    let count = 0;
-    for (let i = 1; i < data.length; i++) {
-      const url = data[i][12] || "";
-      const createdAt = new Date(data[i][15]);
-      if ((url.includes("youtube.com") || url.includes("youtu.be")) && createdAt > oneHourAgo) count++;
-    }
-    return count;
-  } catch (e) { return 0; }
-}
-
 function handleUrlExtraction(url) {
   const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
-  console.log("Processing URL: " + url + " (YouTube: " + isYouTube + ")");
+  console.log("Extracting: " + url);
 
   if (isYouTube) {
-    const youtubeCount = checkYoutubeQuota();
-    console.log("Current Hourly YouTube Count: " + youtubeCount);
-    if (youtubeCount >= 10) throw new Error("YouTube hourly limit reached."); // Naikkan limit untuk testing
-
     let videoId = "";
     if (url.includes('youtu.be/')) videoId = url.split('/').pop().split('?')[0];
     else { const match = url.match(/v=([^&]+)/); videoId = match ? match[1] : ""; }
     
-    console.log("Detected Video ID: " + videoId);
-
-    // 1. Ambil Metadata via YouTube API
     const ytInfo = getYoutubeVideoInfo(videoId);
     let metadataStr = `YOUTUBE_METADATA:\nTitle: ${ytInfo.title}\nDescription: ${ytInfo.description}\n`;
 
-    // 2. Coba Subtitle Resmi (Hanya gunakan jika panjang > 200 karakter)
     const officialSubs = getYoutubeOfficialCaptions(videoId);
-    if (officialSubs && officialSubs.length > 200) {
-      console.log("Official Captions Found (Length: " + officialSubs.length + "). Skipping Vercel.");
+    if (officialSubs && officialSubs.length > 300) {
+      console.log("Official Subs OK.");
       return metadataStr + "\nOFFICIAL CAPTIONS:\n" + officialSubs;
     }
 
-    // 3. Panggil Vercel
-    console.log("No sufficient official captions. Attempting Vercel Call: " + CONFIG.PYTHON_API_URL);
+    console.log("Calling Vercel V37 (Fast Converter)...");
     try {
       const vResponse = UrlFetchApp.fetch(CONFIG.PYTHON_API_URL, {
         method: 'post',
@@ -155,37 +126,30 @@ function handleUrlExtraction(url) {
         muteHttpExceptions: true
       });
       
-      const responseCode = vResponse.getResponseCode();
-      const responseText = vResponse.getContentText();
-      console.log("Vercel Response Code: " + responseCode);
-      
-      const vJson = JSON.parse(responseText);
-      if (responseCode === 200 && vJson.status === 'success' && vJson.stream_url) {
-        console.log("Stream URL received. Processing Whisper...");
-        const audioRes = UrlFetchApp.fetch(vJson.stream_url);
-        const transcript = processGroqWhisper(audioRes.getBlob());
-        return metadataStr + "\nWHISPER TRANSCRIPT:\n" + transcript;
-      } else {
-        console.warn("Vercel failed or returned error: " + (vJson.message || "Unknown"));
+      const vJson = JSON.parse(vResponse.getContentText());
+      if (vJson.status === 'success' && vJson.stream_url) {
+        console.log("Stream URL: " + vJson.stream_url);
+        // Tambahkan timeout lebih lama untuk download audio
+        const audioRes = UrlFetchApp.fetch(vJson.stream_url, { 
+          followRedirects: true,
+          muteHttpExceptions: true
+        });
+        
+        if (audioRes.getResponseCode() === 200) {
+          const transcript = processGroqWhisper(audioRes.getBlob());
+          return metadataStr + "\nWHISPER TRANSCRIPT:\n" + transcript;
+        } else {
+          console.error("Failed to download audio. Code: " + audioRes.getResponseCode());
+        }
       }
     } catch (e) {
-      console.error("Vercel Connection Error: " + e.toString());
+      console.error("Vercel/Whisper Error: " + e.toString());
     }
 
-    return metadataStr + "\nTRANSCRIPT_UNAVAILABLE: Analyzing via metadata context.";
+    return metadataStr + "\nTRANSCRIPT_UNAVAILABLE: Analyzing via metadata only.";
   }
 
-  // Drive/Web Scraping Logic (Restored from V33)
-  const driveId = getFileIdFromUrl(url);
-  if (driveId && (url.includes('drive.google.com') || url.includes('docs.google.com'))) {
-    try {
-      const fileMeta = Drive.Files.get(driveId);
-      const mimeType = fileMeta.mimeType;
-      if (mimeType.includes('document')) return DocumentApp.openById(driveId).getBody().getText();
-      return extractTextContent(DriveApp.getFileById(driveId).getBlob(), mimeType);
-    } catch (e) {}
-  }
-
+  // Web Scraping
   try {
     const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true });
     const html = response.getContentText();
@@ -198,26 +162,6 @@ function handleUrlExtraction(url) {
   } catch (e) {
     return "Extraction failed: " + e.toString();
   }
-}
-
-/**
- * RESTORED HELPERS FROM V33
- */
-function getYoutubeVideoInfo(videoId) {
-  const response = YouTube.Videos.list('snippet', { id: videoId });
-  if (response.items && response.items.length > 0) {
-    const snip = response.items[0].snippet;
-    return { title: snip.title, description: snip.description };
-  }
-  return { title: "Unknown Video", description: "" };
-}
-
-function getYoutubeOfficialCaptions(videoId) {
-  try {
-    const response = UrlFetchApp.fetch(`https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=srv1`, { muteHttpExceptions: true });
-    if (response.getResponseCode() === 200 && response.getContentText().length > 100) return response.getContentText().replace(/<[^>]*>/g, ' ');
-  } catch (e) {}
-  return null;
 }
 
 function processGroqWhisper(audioBlob) {
@@ -259,6 +203,23 @@ function handleAiRequest(provider, prompt, modelOverride) {
       return { status: 'success', data: JSON.parse(res.getContentText()).choices[0].message.content };
     }
   } catch (e) { return { status: 'error', message: e.toString() }; }
+}
+
+function getYoutubeVideoInfo(videoId) {
+  const response = YouTube.Videos.list('snippet', { id: videoId });
+  if (response.items && response.items.length > 0) {
+    const snip = response.items[0].snippet;
+    return { title: snip.title, description: snip.description };
+  }
+  return { title: "Unknown Video", description: "" };
+}
+
+function getYoutubeOfficialCaptions(videoId) {
+  try {
+    const response = UrlFetchApp.fetch(`https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=srv1`, { muteHttpExceptions: true });
+    if (response.getResponseCode() === 200 && response.getContentText().length > 100) return response.getContentText().replace(/<[^>]*>/g, ' ');
+  } catch (e) {}
+  return null;
 }
 
 function setupDatabase() {

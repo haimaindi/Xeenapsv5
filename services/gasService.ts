@@ -90,6 +90,21 @@ export const extractFromUrl = async (url: string, onStageChange?: (stage: 'READI
   }
 };
 
+export const callIdentifierSearch = async (idValue: string): Promise<Partial<LibraryItem> | null> => {
+  if (!GAS_WEB_APP_URL) throw new Error('GAS_WEB_APP_URL missing.');
+  try {
+    const res = await fetch(GAS_WEB_APP_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: 'searchByIdentifier', idValue }),
+    });
+    const result = await res.json();
+    if (result.status === 'success') return result.data;
+    throw new Error(result.message || 'Search failed.');
+  } catch (error) {
+    throw error;
+  }
+};
+
 export const uploadAndStoreFile = async (file: File): Promise<ExtractionResult | null> => {
   if (!GAS_WEB_APP_URL) throw new Error('GAS_WEB_APP_URL missing.');
   
@@ -123,7 +138,6 @@ export const saveLibraryItem = async (item: LibraryItem, fileContent?: any): Pro
       body: JSON.stringify({ action: 'saveItem', item, file: fileContent }),
     });
     const result = await res.json();
-    // Removed Toast.fire here to satisfy user request for removing flickery notification
     return result.status === 'success';
   } catch (error) {
     return false;

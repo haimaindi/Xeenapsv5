@@ -81,6 +81,10 @@ function doPost(e) {
         fileName: fileName
       });
     }
+
+    if (action === 'searchByIdentifier') {
+      return createJsonResponse(handleIdentifierSearch(body.idValue));
+    }
     
     if (action === 'aiProxy') {
       const { provider, prompt, modelOverride } = body;

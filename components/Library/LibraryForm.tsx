@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import { SourceType, FileFormat, LibraryItem, LibraryType } from '../../types';
-import { saveLibraryItem, uploadAndStoreFile, extractFromUrl } from '../../services/gasService';
+import { saveLibraryItem, uploadAndStoreFile, extractFromUrl, callIdentifierSearch } from '../../services/gasService';
 import { extractMetadataWithAI } from '../../services/AddCollectionService';
 import { 
   CheckIcon, 
@@ -11,7 +11,8 @@ import {
   DocumentIcon, 
   CloudArrowUpIcon, 
   ArrowPathIcon,
-  SparklesIcon
+  SparklesIcon,
+  FingerPrintIcon
 } from '@heroicons/react/24/outline';
 import { showXeenapsAlert, XEENAPS_SWAL_CONFIG } from '../../utils/swalUtils';
 import { 
@@ -30,12 +31,13 @@ interface LibraryFormProps {
 const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [extractionStage, setExtractionStage] = useState<'IDLE' | 'READING' | 'BYPASS' | 'AI_ANALYSIS'>('IDLE');
+  const [extractionStage, setExtractionStage] = useState<'IDLE' | 'READING' | 'BYPASS' | 'AI_ANALYSIS' | 'FETCHING_ID'>('IDLE');
   const [file, setFile] = useState<File | null>(null);
   const lastExtractedUrl = useRef<string>("");
+  const lastIdentifier = useRef<string>("");
   
   const [formData, setFormData] = useState({
-    addMethod: 'FILE' as 'LINK' | 'FILE', 
+    addMethod: 'FILE' as 'LINK' | 'FILE' | 'REF', 
     type: LibraryType.LITERATURE, 
     category: 'Original Research',
     topic: '',
@@ -43,8 +45,18 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     title: '',
     authors: [] as string[],
     publisher: '',
+    journalName: '',
+    volume: '',
+    issue: '',
+    pages: '',
     year: '',
+    fullDate: '',
     doi: '',
+    issn: '',
+    isbn: '',
+    pmid: '',
+    arxivId: '',
+    bibcode: '',
     keywords: [] as string[],
     labels: [] as string[],
     url: '',
@@ -67,13 +79,18 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     allLabels: Array.from(new Set(items.flatMap(i => i.labels || []).filter(Boolean))),
   }), [items]);
 
+  // Handle Mode Change
+  const setMode = (mode: 'FILE' | 'LINK' | 'REF') => {
+    setFormData(prev => ({ ...prev, addMethod: mode }));
+  };
+
+  // Logic for LINK mode
   useEffect(() => {
     const handleUrlExtraction = async () => {
       const url = formData.url.trim();
       if (url && url.startsWith('http') && url !== lastExtractedUrl.current && formData.addMethod === 'LINK') {
         lastExtractedUrl.current = url;
         
-        // Auto-extract DOI from URL if present
         const doiPattern = /10\.\d{4,9}\/[-._;()/:A-Z0-9]+/i;
         const doiMatch = url.match(doiPattern);
         if (doiMatch) {
@@ -91,7 +108,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
               title: aiMeta.title || result.title || prev.title,
               year: aiMeta.year || result.year || prev.year,
               publisher: aiMeta.publisher || result.publisher || prev.publisher,
-              doi: aiMeta.doi || prev.doi, // AI extraction for DOI
+              doi: aiMeta.doi || prev.doi,
               authors: (aiMeta.authors && aiMeta.authors.length > 0) ? aiMeta.authors : (result.authors || prev.authors),
               keywords: (aiMeta.keywords && aiMeta.keywords.length > 0) ? aiMeta.keywords : (result.keywords || prev.keywords),
               labels: (aiMeta.labels && aiMeta.labels.length > 0) ? aiMeta.labels : prev.labels,
@@ -99,12 +116,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
               category: aiMeta.category || result.category || prev.category,
               topic: aiMeta.topic || prev.topic,
               subTopic: aiMeta.subTopic || prev.subTopic,
-              inTextAPA: aiMeta.inTextAPA || '',
-              inTextHarvard: aiMeta.inTextHarvard || '',
-              inTextChicago: aiMeta.inTextChicago || '',
-              bibAPA: aiMeta.bibAPA || '',
-              bibHarvard: aiMeta.bibHarvard || '',
-              bibChicago: aiMeta.bibChicago || '',
               chunks: result.chunks || []
             }));
           }
@@ -112,10 +123,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
           showXeenapsAlert({ 
             icon: 'warning', 
             title: 'EXTRACTION FAILED', 
-            text: 'This link can not be extracted, you can not use Insight Analyzer for this link and you are must be responsible for the content', 
+            text: 'This link can not be extracted automatically.', 
             confirmButtonText: 'I UNDERSTAND' 
           });
-          setFormData(prev => ({ ...prev, chunks: [] }));
         } finally {
           setExtractionStage('IDLE');
         }
@@ -124,6 +134,33 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     const tid = setTimeout(handleUrlExtraction, 1000);
     return () => clearTimeout(tid);
   }, [formData.url, formData.addMethod]);
+
+  // Logic for REF mode (DOI, ISBN, PMID, etc.)
+  useEffect(() => {
+    const handleIdentifierSearch = async () => {
+      const idVal = formData.doi.trim(); 
+      if (idVal && idVal !== lastIdentifier.current && formData.addMethod === 'REF') {
+        lastIdentifier.current = idVal;
+        setExtractionStage('FETCHING_ID');
+        try {
+          const data = await callIdentifierSearch(idVal);
+          if (data) {
+            setFormData(prev => ({
+              ...prev,
+              ...data,
+              authors: Array.isArray(data.authors) ? data.authors : prev.authors,
+            }));
+          }
+        } catch (e: any) {
+          showXeenapsAlert({ icon: 'error', title: 'Search Failed', text: e.message || 'ID not found.' });
+        } finally {
+          setExtractionStage('IDLE');
+        }
+      }
+    };
+    const tid = setTimeout(handleIdentifierSearch, 1500);
+    return () => clearTimeout(tid);
+  }, [formData.doi, formData.addMethod]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
@@ -148,17 +185,11 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             category: aiMeta.category || result.category || prev.category,
             topic: aiMeta.topic || prev.topic,
             subTopic: aiMeta.subTopic || prev.subTopic,
-            inTextAPA: aiMeta.inTextAPA || '',
-            inTextHarvard: aiMeta.inTextHarvard || '',
-            inTextChicago: aiMeta.inTextChicago || '',
-            bibAPA: aiMeta.bibAPA || '',
-            bibHarvard: aiMeta.bibHarvard || '',
-            bibChicago: aiMeta.bibChicago || '',
             chunks: result.chunks || []
           }));
         }
       } catch (err: any) {
-        showXeenapsAlert({ icon: 'warning', title: 'File Error', text: err.message || 'Extraction failed.', confirmButtonText: 'OK' });
+        showXeenapsAlert({ icon: 'warning', title: 'File Error', text: err.message || 'Extraction failed.' });
       } finally {
         setExtractionStage('IDLE');
       }
@@ -171,13 +202,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     
     Swal.fire({
       title: 'Registering Item...',
-      text: formData.addMethod === 'FILE' 
-        ? 'The larger the file size, the longer it will take. Please wait.' 
-        : 'Ensuring data is saved accurately. Please wait.',
+      text: 'Ensuring data is saved accurately. Please wait.',
       allowOutsideClick: false,
-      didOpen: () => {
-        Swal.showLoading();
-      },
+      didOpen: () => Swal.showLoading(),
       ...XEENAPS_SWAL_CONFIG
     });
 
@@ -223,6 +250,19 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     }
   };
 
+  // Helper to convert date picker (YYYY-MM-DD) to string (DD MMM YYYY)
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = e.target.value; // Format: YYYY-MM-DD
+    if (!val) {
+      setFormData(prev => ({ ...prev, fullDate: '' }));
+      return;
+    }
+    const d = new Date(val);
+    const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    const formatted = `${d.getDate().toString().padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
+    setFormData(prev => ({ ...prev, fullDate: formatted }));
+  };
+
   const isExtracting = extractionStage !== 'IDLE';
   const isFormDisabled = isExtracting || isSubmitting;
 
@@ -230,51 +270,65 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     <FormPageContainer>
       <FormStickyHeader title="Add Collection" subtitle="Expand your digital library" onBack={() => navigate('/')} rightElement={
         <div className="flex bg-gray-100/50 p-1.5 rounded-2xl gap-1 w-full md:w-auto">
-          <button type="button" onClick={() => setFormData({...formData, addMethod: 'FILE'})} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'FILE' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74] disabled:opacity-50'}`}><DocumentIcon className="w-4 h-4" /> FILE</button>
-          <button type="button" onClick={() => setFormData({...formData, addMethod: 'LINK'})} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'LINK' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74] disabled:opacity-50'}`}><LinkIcon className="w-4 h-4" /> LINK</button>
+          <button type="button" onClick={() => setMode('FILE')} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'FILE' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74] disabled:opacity-50'}`}><DocumentIcon className="w-4 h-4" /> FILE</button>
+          <button type="button" onClick={() => setMode('LINK')} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'LINK' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74] disabled:opacity-50'}`}><LinkIcon className="w-4 h-4" /> LINK</button>
+          <button type="button" onClick={() => setMode('REF')} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'REF' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74] disabled:opacity-50'}`}><FingerPrintIcon className="w-4 h-4" /> REF</button>
         </div>
       } />
       <FormContentArea>
         <form onSubmit={handleSubmit} className="space-y-8">
-          {formData.addMethod === 'LINK' ? (
-            <FormField label="Reference URL" required error={!formData.url}>
-              <div className="space-y-3">
+          {/* Main Input Area */}
+          <div className="space-y-3">
+            {formData.addMethod === 'LINK' ? (
+              <FormField label="Reference URL" required error={!formData.url}>
                 <div className="relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center">
                     {isExtracting ? <ArrowPathIcon className="w-5 h-5 text-[#004A74] animate-spin" /> : <LinkIcon className="w-5 h-5 text-gray-300 group-focus-within:text-[#004A74]" />}
                   </div>
                   <input className={`w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl focus:ring-2 border ${!formData.url ? 'border-red-300' : 'border-gray-200'} text-sm font-medium transition-all ${isFormDisabled ? 'opacity-80' : ''}`} placeholder="Paste research link..." value={formData.url} onChange={(e) => setFormData({...formData, url: e.target.value})} disabled={isFormDisabled} />
                 </div>
-                {isExtracting && (
-                  <div className="flex items-center gap-2 px-2 animate-in fade-in slide-in-from-top-1 duration-300">
-                    <SparklesIcon className="w-4 h-4 text-[#FED400] animate-pulse" />
-                    <span className="text-[10px] font-black text-[#004A74] uppercase tracking-tighter">
-                      {extractionStage === 'READING' ? 'Content Extraction...' : extractionStage === 'AI_ANALYSIS' ? 'AI Analyzing Content...' : 'Bypassing Protection...'}
-                    </span>
+              </FormField>
+            ) : formData.addMethod === 'REF' ? (
+              <FormField label="Identifier (DOI, ISSN, ISBN, PMID, etc.)" required error={!formData.doi}>
+                <div className="relative group">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center">
+                    {isExtracting ? <ArrowPathIcon className="w-5 h-5 text-[#004A74] animate-spin" /> : <FingerPrintIcon className="w-5 h-5 text-gray-300 group-focus-within:text-[#004A74]" />}
                   </div>
-                )}
+                  <input className={`w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl focus:ring-2 border ${!formData.doi ? 'border-red-300' : 'border-gray-200'} text-sm font-mono font-bold transition-all ${isFormDisabled ? 'opacity-80' : ''}`} placeholder="Enter DOI, ISBN, PMID, Bibcode, or Title..." value={formData.doi} onChange={(e) => setFormData({...formData, doi: e.target.value})} disabled={isFormDisabled} />
+                </div>
+              </FormField>
+            ) : (
+              <FormField label="File Attachment" required error={!file}>
+                <label className={`relative flex flex-col items-center justify-center w-full h-40 bg-gray-50 border-2 border-dashed ${!file ? 'border-red-300' : 'border-gray-200'} rounded-[2rem] cursor-pointer group ${isFormDisabled ? 'opacity-70 pointer-events-none' : ''}`}>
+                  {isExtracting ? (
+                    <div className="flex flex-col items-center px-4 text-center">
+                      <ArrowPathIcon className="w-8 h-8 text-[#004A74] animate-spin mb-3" />
+                      <p className="text-[10px] font-black text-[#004A74] uppercase tracking-widest">Processing Content...</p>
+                    </div>
+                  ) : (
+                    <>
+                      <CloudArrowUpIcon className="w-8 h-8 text-gray-300 group-hover:text-[#004A74] mb-2" />
+                      <p className="text-sm text-gray-500 text-center px-6">{file ? <span className="font-bold text-[#004A74]">{file.name}</span> : "Drop academic files here (Max 25Mb)"}</p>
+                    </>
+                  )}
+                  <input type="file" className="hidden" onChange={handleFileChange} disabled={isFormDisabled} />
+                </label>
+              </FormField>
+            )}
+            {/* Status indicators moved directly under input */}
+            {isExtracting && (
+              <div className="flex items-center gap-2 px-2 animate-in fade-in slide-in-from-top-1 duration-300">
+                <SparklesIcon className="w-4 h-4 text-[#FED400] animate-pulse" />
+                <span className="text-[10px] font-black text-[#004A74] uppercase tracking-tighter">
+                  {extractionStage === 'READING' ? 'Content Extraction...' : 
+                   extractionStage === 'AI_ANALYSIS' ? 'AI Analyzing Content...' : 
+                   extractionStage === 'FETCHING_ID' ? 'Fetching Metadata from Global APIs...' : 'Bypassing Protection...'}
+                </span>
               </div>
-            </FormField>
-          ) : (
-            <FormField label="File Attachment" required error={!file}>
-              <label className={`relative flex flex-col items-center justify-center w-full h-40 bg-gray-50 border-2 border-dashed ${!file ? 'border-red-300' : 'border-gray-200'} rounded-[2rem] cursor-pointer group ${isFormDisabled ? 'opacity-70 pointer-events-none' : ''}`}>
-                {isExtracting ? (
-                  <div className="flex flex-col items-center px-4 text-center">
-                    <ArrowPathIcon className="w-8 h-8 md:w-10 md:h-10 text-[#004A74] animate-spin mb-3" />
-                    <p className="text-[10px] md:text-sm font-black text-[#004A74] uppercase tracking-widest">
-                      {extractionStage === 'READING' ? 'Content Extraction...' : 'AI Analyzing Content...'}
-                    </p>
-                  </div>
-                ) : (
-                  <>
-                    <CloudArrowUpIcon className="w-8 h-8 text-gray-300 group-hover:text-[#004A74] mb-2" />
-                    <p className="text-sm text-gray-500 text-center px-6">{file ? <span className="font-bold text-[#004A74]">{file.name}</span> : "Drop PDF, Word, or Excel here (Max 25Mb)"}</p>
-                  </>
-                )}
-                <input type="file" className="hidden" onChange={handleFileChange} disabled={isFormDisabled} />
-              </label>
-            </FormField>
-          )}
+            )}
+          </div>
+
+          {/* Classification */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField label="Type" required error={!formData.type}><FormDropdown value={formData.type} onChange={(v) => setFormData({...formData, type: v as LibraryType})} options={Object.values(LibraryType)} placeholder="Select type..." disabled={isFormDisabled} /></FormField>
             <FormField label="Category" required error={!formData.category}><FormDropdown value={formData.category} onChange={(v) => setFormData({...formData, category: v})} options={['Original Research', 'Review', 'Case Study', 'Technical Report', 'Other']} placeholder="Select category..." disabled={isFormDisabled} /></FormField>
@@ -283,17 +337,69 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             <FormField label="Topic" required error={!formData.topic}><FormDropdown value={formData.topic} onChange={(v) => setFormData({...formData, topic: v})} options={existingValues.topics} placeholder="Scientific topic..." disabled={isFormDisabled} /></FormField>
             <FormField label="Sub Topic"><FormDropdown value={formData.subTopic} onChange={(v) => setFormData({...formData, subTopic: v})} options={existingValues.subTopics} placeholder="Specific area..." disabled={isFormDisabled} /></FormField>
           </div>
+
+          {/* Basic Metadata Section (Frozen during extraction) */}
           <FormField label="Title"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-bold text-[#004A74]" placeholder="Enter title..." value={formData.title} onChange={(e) => setFormData({...formData, title: e.target.value})} disabled={isFormDisabled} /></FormField>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div className="md:col-span-2"><FormField label="Author(s)"><FormDropdown isMulti multiValues={formData.authors} onAddMulti={(v) => setFormData({...formData, authors: [...formData.authors, v]})} onRemoveMulti={(v) => setFormData({...formData, authors: formData.authors.filter(a => a !== v)})} options={existingValues.allAuthors} placeholder="Identify authors..." value="" onChange={() => {}} disabled={isFormDisabled} /></FormField></div>
-            <FormField label="Year"><input type="text" className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" placeholder="YYYY" value={formData.year} onChange={(e) => setFormData({...formData, year: e.target.value.substring(0,4)})} disabled={isFormDisabled} /></FormField>
-            <FormField label="DOI"><input type="text" className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" placeholder="10.xxxx/..." value={formData.doi} onChange={(e) => setFormData({...formData, doi: e.target.value})} disabled={isFormDisabled} /></FormField>
+          <FormField label="Author(s)"><FormDropdown isMulti multiValues={formData.authors} onAddMulti={(v) => setFormData({...formData, authors: [...formData.authors, v]})} onRemoveMulti={(v) => setFormData({...formData, authors: formData.authors.filter(a => a !== v)})} options={existingValues.allAuthors} placeholder="Identify authors..." value="" onChange={() => {}} disabled={isFormDisabled} /></FormField>
+
+          {/* Publisher & Journal Section (Frozen during extraction) */}
+          <div className="space-y-6 bg-gray-50/30 p-6 rounded-[2rem] border border-gray-100">
+            <FormField label="Publisher"><FormDropdown value={formData.publisher} onChange={(v) => setFormData({...formData, publisher: v})} options={existingValues.publishers} placeholder="Publisher name..." disabled={isFormDisabled} /></FormField>
+            <FormField label="Journal"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm font-medium" placeholder="Journal name..." value={formData.journalName} onChange={(e) => setFormData({...formData, journalName: e.target.value})} disabled={isFormDisabled} /></FormField>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <FormField label="Volume"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm" placeholder="Vol" value={formData.volume} onChange={(e) => setFormData({...formData, volume: e.target.value})} disabled={isFormDisabled} /></FormField>
+              <FormField label="Issue"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm" placeholder="Issue" value={formData.issue} onChange={(e) => setFormData({...formData, issue: e.target.value})} disabled={isFormDisabled} /></FormField>
+              <FormField label="Pages"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm" placeholder="Pages" value={formData.pages} onChange={(e) => setFormData({...formData, pages: e.target.value})} disabled={isFormDisabled} /></FormField>
+            </div>
           </div>
-          <FormField label="Publisher / Journal"><FormDropdown value={formData.publisher} onChange={(v) => setFormData({...formData, publisher: v})} options={existingValues.publishers} placeholder="Journal name..." disabled={isFormDisabled} /></FormField>
+
+          {/* Timing Section - YEAR and DATE (Sesuai Permintaan) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <FormField label="Year (YYYY)">
+              <input 
+                type="number" 
+                className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" 
+                placeholder="YYYY" 
+                value={formData.year} 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val.length <= 4) setFormData({...formData, year: val});
+                }} 
+                onKeyDown={(e) => {
+                  // Only allow digits, Backspace, Delete, Arrow keys
+                  if (!/[0-9]/.test(e.key) && !['Backspace', 'Delete', 'ArrowLeft', 'ArrowRight', 'Tab'].includes(e.key)) {
+                    e.preventDefault();
+                  }
+                }} 
+                disabled={isFormDisabled} 
+              />
+            </FormField>
+            <FormField label="Date (Calendar Modal)">
+              <input 
+                type="date" 
+                className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" 
+                onChange={handleDateChange} 
+                disabled={isFormDisabled} 
+              />
+            </FormField>
+          </div>
+
+          {/* Tags & Labels */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField label="Keywords"><FormDropdown isMulti multiValues={formData.keywords} onAddMulti={(v) => setFormData({...formData, keywords: [...formData.keywords, v]})} onRemoveMulti={(v) => setFormData({...formData, keywords: formData.keywords.filter(a => a !== v)})} options={existingValues.allKeywords} placeholder="Keywords..." value="" onChange={() => {}} disabled={isFormDisabled} /></FormField>
             <FormField label="Labels"><FormDropdown isMulti multiValues={formData.labels} onAddMulti={(v) => setFormData({...formData, labels: [...formData.labels, v]})} onRemoveMulti={(v) => setFormData({...formData, labels: formData.labels.filter(a => a !== v)})} options={existingValues.allLabels} placeholder="Thematic labels..." value="" onChange={() => {}} disabled={isFormDisabled} /></FormField>
           </div>
+
+          {/* Academic Identifiers Grid (Frozen during extraction) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
+            <FormField label="DOI"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="10.xxxx/..." value={formData.doi} onChange={(e) => setFormData({...formData, doi: e.target.value})} disabled={isFormDisabled} /></FormField>
+            <FormField label="ISSN"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="XXXX-XXXX" value={formData.issn} onChange={(e) => setFormData({...formData, issn: e.target.value})} disabled={isFormDisabled} /></FormField>
+            <FormField label="ISBN"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="978-x-xxx" value={formData.isbn} onChange={(e) => setFormData({...formData, isbn: e.target.value})} disabled={isFormDisabled} /></FormField>
+            <FormField label="PMID"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="PubMed ID" value={formData.pmid} onChange={(e) => setFormData({...formData, pmid: e.target.value})} disabled={isFormDisabled} /></FormField>
+            <FormField label="ArXiv ID"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="yymm.xxxxx" value={formData.arxivId} onChange={(e) => setFormData({...formData, arxivId: e.target.value})} disabled={isFormDisabled} /></FormField>
+            <FormField label="Bibcode"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="ADS Bibcode" value={formData.bibcode} onChange={(e) => setFormData({...formData, bibcode: e.target.value})} disabled={isFormDisabled} /></FormField>
+          </div>
+
           <div className="pt-10 flex flex-col md:flex-row gap-4">
             <button type="button" onClick={() => navigate('/')} disabled={isFormDisabled} className="w-full md:px-10 py-5 bg-gray-100 text-gray-400 rounded-[1.5rem] font-black text-sm uppercase">Cancel</button>
             <button type="submit" disabled={isFormDisabled} className="w-full py-5 bg-[#004A74] text-white rounded-[1.5rem] font-black text-sm flex items-center justify-center gap-3 uppercase">{isSubmitting ? 'REGISTERING...' : isExtracting ? 'ANALYZING...' : <><CheckIcon className="w-5 h-5" /> Register Item</>}</button>

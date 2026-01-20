@@ -44,16 +44,28 @@ export interface LibraryItem {
   authors: string[];
   publisher: string;
   year: string;
-  doi?: string; // New: DOI Support
+  fullDate?: string; // Format: DD MMM YYYY from Date picker
+  
+  // Academic Specifics
+  journalName?: string;
+  volume?: string;
+  issue?: string;
+  pages?: string;
+  doi?: string;
+  issn?: string;
+  isbn?: string;
+  pmid?: string;
+  arxivId?: string;
+  bibcode?: string;
   
   // Collection Info
-  addMethod: 'LINK' | 'FILE';
+  addMethod: 'LINK' | 'FILE' | 'REF';
   source: SourceType;
   format: FileFormat;
   url?: string;
   fileId?: string;
-  youtubeId?: string; // New: YouTube Embed URL
-  imageView?: string; // New: Image Preview Link
+  youtubeId?: string;
+  imageView?: string;
   
   // Tags & Labels
   keywords: string[];

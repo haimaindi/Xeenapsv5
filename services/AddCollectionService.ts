@@ -20,6 +20,7 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
     - "title": Use the "Title" found in the metadata section.
     - "year": Guess the year from the content or transcript context if not found.
     - "inTextAPA", "inTextHarvard", "inTextChicago", "bibAPA", "bibHarvard", "bibChicago": MUST BE EMPTY STRINGS.
+    - EVEN IF TEXT IS VERY SHORT, PRODUCE THE JSON WITH WHATEVER INFO IS PRESENT.
     ----------------------------------------
 
     SCOPE LIMITATION (CRITICAL):

@@ -115,11 +115,12 @@ function getFileIdFromUrl(url) {
 
 /**
  * OPTIMIZED handleUrlExtraction
- * Logic: Strict prioritization to save ScrapingAnt tokens.
  */
 function handleUrlExtraction(url) {
+  const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
+
   // LAYER 0: YouTube Extraction (via Vercel Python Serverless Function)
-  if (url.includes('youtube.com') || url.includes('youtu.be')) {
+  if (isYouTube) {
     try {
       const response = UrlFetchApp.fetch(CONFIG.PYTHON_API_URL, {
         method: 'post',
@@ -129,9 +130,13 @@ function handleUrlExtraction(url) {
       });
       if (response.getResponseCode() === 200) {
         const json = JSON.parse(response.getContentText());
-        if (json.status === 'success') return json.data;
+        // HARD STOP FOR YOUTUBE: Return what we got, don't fallback to native fetch
+        if (json.status === 'success' && json.data) return json.data;
       }
+      // If we are here, Vercel failed. Stop here for YouTube to avoid 100% block from Google
+      if (isYouTube) throw new Error("YouTube service (Vercel) returned no data.");
     } catch (e) {
+      if (isYouTube) throw e;
       console.log("YouTube proxy failed: " + e.message);
     }
   }
@@ -220,7 +225,11 @@ function extractWebMetadata(html) {
 }
 
 function isBlocked(text) {
-  if (!text || text.length < 200) return true;
+  if (!text) return true;
+  // If it's YouTube metadata, never block it even if short
+  if (text.includes('YOUTUBE_METADATA')) return false;
+  
+  if (text.length < 200) return true;
   const criticalBlocked = ["access denied", "cloudflare", "security check", "captcha", "bot detection", "robot check"];
   const textLower = text.toLowerCase();
   

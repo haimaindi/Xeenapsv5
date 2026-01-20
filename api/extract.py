@@ -21,11 +21,13 @@ def extract_youtube_data(url):
         return "Error: Could not extract Video ID from YouTube URL."
 
     metadata_text = ""
+    metadata_found = False
     try:
         # Use oEmbed for basic metadata (Title, Author/Channel)
         oembed_url = f"https://www.youtube.com/oembed?url={url}&format=json"
         resp = requests.get(oembed_url, timeout=10).json()
         metadata_text = f"YOUTUBE_METADATA:\nTitle: {resp.get('title')}\nChannel: {resp.get('author_name')}\n"
+        metadata_found = True
     except Exception as e:
         metadata_text = "YOUTUBE_METADATA: (Metadata retrieval failed)\n"
 
@@ -47,7 +49,9 @@ def extract():
             url = data.get('url')
             if url and ('youtube.com' in url or 'youtu.be' in url):
                 result_text = extract_youtube_data(url)
-                return jsonify({"status": "success", "data": result_text})
+                # Success as long as we have some text to show (metadata or transcript)
+                if "YOUTUBE_METADATA" in result_text:
+                    return jsonify({"status": "success", "data": result_text})
         
         return jsonify({"status": "error", "message": "Invalid request. Provide a YouTube URL via JSON."}), 400
         

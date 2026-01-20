@@ -1,4 +1,3 @@
-
 import { LibraryItem, GASResponse, ExtractionResult } from '../types';
 import { GAS_WEB_APP_URL } from '../constants';
 import Swal from 'sweetalert2';
@@ -52,9 +51,13 @@ export const callAiProxy = async (provider: 'groq' | 'gemini', prompt: string, m
 };
 
 const processExtractedText = (extractedText: string, defaultTitle: string = ""): ExtractionResult => {
-  if (!extractedText || extractedText.length < 300) {
+  const isYouTube = extractedText.includes("YOUTUBE_METADATA");
+  const minLength = isYouTube ? 50 : 300;
+
+  if (!extractedText || extractedText.length < minLength) {
     throw new Error("Content extraction returned insufficient data.");
   }
+
   const limitTotal = 200000;
   const limitedText = extractedText.substring(0, limitTotal);
   const aiSnippet = limitedText.substring(0, 7500);

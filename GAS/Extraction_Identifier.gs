@@ -1,12 +1,13 @@
 /**
- * XEENAPS PKM - ACADEMIC IDENTIFIER MODULE (SMART ROUTER V2)
- * Advanced Multi-API Cascading & Merging
+ * XEENAPS PKM - ACADEMIC IDENTIFIER MODULE (SMART ROUTER V3)
+ * Advanced Multi-API Cascading, Robust Google Books Parsing & Date Standardization
  */
 
 function handleIdentifierSearch(idValue) {
   let val = idValue.trim();
+  if (!val) return { status: 'error', message: 'Empty input.' };
   
-  // 1. SMART DOI EXTRACTION (Handles URLs and messy strings)
+  // 1. SMART DOI EXTRACTION
   const doiRegex = /10\.\d{4,9}\/[-._;()/:A-Z0-9]+/i;
   const doiMatch = val.match(doiRegex);
   
@@ -17,7 +18,7 @@ function handleIdentifierSearch(idValue) {
     return mergeMetadata(crossref, openAlex);
   }
 
-  // 2. ISBN DETECTION (Starts with 978 or 979)
+  // 2. ISBN DETECTION
   const cleanIsbn = val.replace(/[-\s]/g, '');
   if (cleanIsbn.match(/^(978|979)\d{10,11}$/) || (cleanIsbn.length === 10 && cleanIsbn.match(/^\d{9}[\dXx]$/))) {
     const ol = fetchOpenLibraryMetadata(cleanIsbn);
@@ -52,6 +53,44 @@ function handleIdentifierSearch(idValue) {
 }
 
 /**
+ * Standardized Date Parser for XEENAPS
+ * Converts YYYY-MM-DD, YYYY-MM, or space separated dates to "DD MMM YYYY"
+ */
+function standardizeFullDate(dateStr) {
+  if (!dateStr) return "";
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  
+  try {
+    // Check for YYYY-MM-DD or YYYY-MM
+    if (dateStr.includes("-")) {
+      const parts = dateStr.split("-");
+      const y = parts[0];
+      const m = parseInt(parts[1]);
+      const d = parts[2] ? parts[2].padStart(2, '0') : "01";
+      if (m >= 1 && m <= 12) return `${d} ${months[m-1]} ${y}`;
+      return y;
+    }
+    
+    // Check for space separated (e.g. "2024 Aug 15")
+    if (dateStr.includes(" ")) {
+      const parts = dateStr.split(" ").filter(p => p.length > 0);
+      if (parts.length >= 2) {
+        // Handle "YYYY MMM DD" or "YYYY MMM"
+        const y = parts[0].match(/\d{4}/) ? parts[0] : parts[parts.length-1];
+        const m = parts.find(p => months.includes(p)) || months[0];
+        const d = parts.find(p => p.match(/^\d{1,2}$/))?.padStart(2, '0') || "01";
+        return `${d} ${m} ${y}`;
+      }
+    }
+
+    // Just Year
+    if (dateStr.match(/^\d{4}$/)) return `01 Jan ${dateStr}`;
+  } catch (e) {}
+  
+  return dateStr;
+}
+
+/**
  * Merges metadata from two sources, picking the most complete fields.
  */
 function mergeMetadata(sourceA, sourceB) {
@@ -61,13 +100,17 @@ function mergeMetadata(sourceA, sourceB) {
 
   const a = sourceA.data;
   const b = sourceB.data;
-
   const merged = { ...a };
+
   Object.keys(b).forEach(key => {
     // If field in A is empty/short but B has better data, use B
-    if (!merged[key] || (typeof merged[key] === 'string' && merged[key].length < b[key].toString().length)) {
+    const valA = String(merged[key] || "");
+    const valB = String(b[key] || "");
+    
+    if (valA.length < valB.length) {
       merged[key] = b[key];
     }
+    
     // Handle Authors specifically (prefer longer array)
     if (key === 'authors' && Array.isArray(b.authors) && b.authors.length > (Array.isArray(a.authors) ? a.authors.length : 0)) {
       merged.authors = b.authors;
@@ -87,24 +130,15 @@ function fetchOpenAlexMetadata(doi) {
     if (res.getResponseCode() !== 200) return { status: 'error' };
 
     const item = JSON.parse(res.getContentText());
-    const authors = (item.authorships || []).map(a => a.author.display_name);
-    const pubDate = item.publication_date || ""; // YYYY-MM-DD
-    let fullDate = "";
-    if (pubDate) {
-      const d = new Date(pubDate);
-      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      fullDate = `${d.getDate().toString().padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
-    }
-
     return {
       status: 'success',
       data: {
         title: item.title || "",
-        authors: authors,
+        authors: (item.authorships || []).map(a => a.author.display_name),
         publisher: item.primary_location?.source?.display_name || "",
         journalName: item.primary_location?.source?.display_name || "",
         year: item.publication_year ? item.publication_year.toString() : "",
-        fullDate: fullDate,
+        fullDate: standardizeFullDate(item.publication_date),
         volume: item.biblio?.volume || "",
         issue: item.biblio?.issue || "",
         pages: (item.biblio?.first_page && item.biblio?.last_page) ? `${item.biblio.first_page}-${item.biblio.last_page}` : (item.biblio?.first_page || ""),
@@ -116,26 +150,20 @@ function fetchOpenAlexMetadata(doi) {
 }
 
 /**
- * GOOGLE BOOKS API - The best for Book titles and ISBNs
+ * GOOGLE BOOKS API - Refined for robustness
  */
 function fetchGoogleBooksMetadata(query, isIsbn) {
   try {
-    const q = isIsbn ? `isbn:${query}` : query;
-    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1`;
+    const q = isIsbn ? `isbn:${query}` : `intitle:${query}`;
+    const url = `https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(q)}&maxResults=1&printType=books`;
     const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
     const data = JSON.parse(res.getContentText());
-    const book = data.items && data.items[0]?.volumeInfo;
-
-    if (!book) return { status: 'error' };
+    
+    if (!data.items || data.items.length === 0) return { status: 'error' };
+    const book = data.items[0].volumeInfo;
 
     const pubDate = book.publishedDate || "";
-    let year = pubDate.split('-')[0];
-    let fullDate = "";
-    if (pubDate.includes('-')) {
-      const d = new Date(pubDate);
-      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      fullDate = `${d.getDate().toString().padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
-    }
+    const year = pubDate.split('-')[0];
 
     return {
       status: 'success',
@@ -144,7 +172,7 @@ function fetchGoogleBooksMetadata(query, isIsbn) {
         authors: book.authors || [],
         publisher: book.publisher || "",
         year: year,
-        fullDate: fullDate,
+        fullDate: standardizeFullDate(pubDate),
         isbn: (book.industryIdentifiers || []).find(id => id.type.includes('ISBN'))?.identifier || "",
         pages: book.pageCount ? book.pageCount.toString() : ""
       }
@@ -153,7 +181,7 @@ function fetchGoogleBooksMetadata(query, isIsbn) {
 }
 
 /**
- * CROSSREF API (Original)
+ * CROSSREF API
  */
 function fetchCrossrefMetadata(doi, queryTitle) {
   try {
@@ -169,36 +197,23 @@ function fetchCrossrefMetadata(doi, queryTitle) {
 
     const data = JSON.parse(res.getContentText());
     const item = doi ? data.message : (data.message.items && data.message.items[0]);
-
     if (!item) return { status: 'error' };
 
-    const authors = (item.author || []).map(a => (a.given ? a.given + " " : "") + (a.family || ""));
-    const journal = (item["container-title"] && item["container-title"][0]) || "";
-    const publisher = item.publisher || "";
-    const year = (item.issued && item.issued["date-parts"] && item.issued["date-parts"][0] && item.issued["date-parts"][0][0]) || "";
-    
-    let fullDate = "";
+    let rawDate = "";
     if (item.issued && item.issued["date-parts"] && item.issued["date-parts"][0]) {
-      const parts = item.issued["date-parts"][0];
-      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      if (parts.length >= 3) {
-        fullDate = `${parts[2].toString().padStart(2, '0')} ${months[parts[1]-1]} ${parts[0]}`;
-      } else if (parts.length === 2) {
-        fullDate = `${months[parts[1]-1]} ${parts[0]}`;
-      } else if (parts.length === 1) {
-        fullDate = `${parts[0]}`;
-      }
+      const p = item.issued["date-parts"][0];
+      rawDate = p.length === 3 ? `${p[0]}-${p[1]}-${p[2]}` : (p.length === 2 ? `${p[0]}-${p[1]}` : `${p[0]}`);
     }
 
     return {
       status: 'success',
       data: {
         title: (item.title && item.title[0]) || "",
-        authors: authors,
-        publisher: publisher,
-        journalName: journal,
-        year: year.toString(),
-        fullDate: fullDate,
+        authors: (item.author || []).map(a => (a.given ? a.given + " " : "") + (a.family || "")),
+        publisher: item.publisher || "",
+        journalName: (item["container-title"] && item["container-title"][0]) || "",
+        year: (item.issued?.["date-parts"]?.[0]?.[0] || "").toString(),
+        fullDate: standardizeFullDate(rawDate),
         volume: item.volume || "",
         issue: item.issue || "",
         pages: item.page || "",
@@ -211,7 +226,7 @@ function fetchCrossrefMetadata(doi, queryTitle) {
 }
 
 /**
- * OPENLIBRARY API (Original)
+ * OPENLIBRARY API
  */
 function fetchOpenLibraryMetadata(isbn) {
   try {
@@ -229,6 +244,7 @@ function fetchOpenLibraryMetadata(isbn) {
         authors: (book.authors || []).map(a => a.name),
         publisher: (book.publishers || []).map(p => p.name).join(", "),
         year: book.publish_date ? book.publish_date.match(/\d{4}/)?.[0] || "" : "",
+        fullDate: standardizeFullDate(book.publish_date),
         isbn: isbn,
         pages: book.number_of_pages ? book.number_of_pages.toString() : ""
       }
@@ -248,16 +264,6 @@ function fetchPubMedMetadata(pmid) {
 
     if (!result) return { status: 'error' };
 
-    let fullDate = "";
-    if (result.pubdate) {
-      const parts = result.pubdate.split(' ');
-      if (parts.length >= 3) {
-        fullDate = `${parts[2].padStart(2, '0')} ${parts[1]} ${parts[0]}`;
-      } else {
-        fullDate = result.pubdate;
-      }
-    }
-
     return {
       status: 'success',
       data: {
@@ -266,7 +272,7 @@ function fetchPubMedMetadata(pmid) {
         publisher: result.source || "",
         journalName: result.fulljournalname || result.source || "",
         year: result.pubdate ? result.pubdate.split(' ')[0] : "",
-        fullDate: fullDate,
+        fullDate: standardizeFullDate(result.pubdate),
         pmid: pmid,
         volume: result.volume || "",
         issue: result.issue || "",
@@ -289,26 +295,17 @@ function fetchArxivMetadata(id) {
     const title = xml.match(/<title>([\s\S]*?)<\/title>/)?.[1].replace(/\s+/g, ' ').trim() || "";
     const authors = [...xml.matchAll(/<name>([\s\S]*?)<\/name>/g)].map(m => m[1]);
     const pubTag = xml.match(/<published>([\s\S]*?)<\/published>/)?.[1] || "";
-    let year = "";
-    let fullDate = "";
-    if (pubTag) {
-      const d = new Date(pubTag);
-      year = d.getFullYear().toString();
-      const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-      fullDate = `${d.getDate().toString().padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
-    }
-    const doi = xml.match(/<arxiv:doi[^>]*>([\s\S]*?)<\/arxiv:doi>/)?.[1] || "";
-
+    
     return {
       status: 'success',
       data: {
         title: title,
         authors: authors,
         publisher: "arXiv",
-        year: year,
-        fullDate: fullDate,
+        year: pubTag ? pubTag.substring(0, 4) : "",
+        fullDate: standardizeFullDate(pubTag),
         arxivId: id,
-        doi: doi
+        doi: xml.match(/<arxiv:doi[^>]*>([\s\S]*?)<\/arxiv:doi>/)?.[1] || ""
       }
     };
   } catch (e) { return { status: 'error' }; }

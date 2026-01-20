@@ -271,8 +271,12 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
         const m = months.indexOf(parts[1]);
         if (m === -1) return "";
+        // Month is 0-indexed in JS Date
         const d = new Date(parseInt(parts[2]), m, parseInt(parts[0]));
-        return d.toISOString().split('T')[0];
+        // Adjust for timezone offset to prevent date shift
+        const offset = d.getTimezoneOffset();
+        const adjustedDate = new Date(d.getTime() - (offset * 60 * 1000));
+        return adjustedDate.toISOString().split('T')[0];
       }
     } catch(e) {}
     return "";

@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { ChevronDownIcon, PlusSmallIcon, ArrowLeftIcon, XMarkIcon } from '@heroicons/react/24/outline';
 
@@ -74,18 +75,20 @@ export const FormField: React.FC<{
 /**
  * Standard Searchable Dropdown
  */
+// Fix: Added 'disabled' prop and widened types (any/unknown) to support enums and complex values
 export const FormDropdown: React.FC<{
-  value: string;
-  onChange: (val: string) => void;
-  options: string[];
+  value: string | any;
+  onChange: (val: any) => void;
+  options: (string | any)[];
   placeholder: string;
   isMulti?: boolean;
   onAddMulti?: (val: string) => void;
   onRemoveMulti?: (val: string) => void;
   multiValues?: string[];
   error?: boolean;
+  disabled?: boolean;
 }> = ({ 
-  value, onChange, options, placeholder, isMulti, onAddMulti, onRemoveMulti, multiValues = [], error 
+  value, onChange, options, placeholder, isMulti, onAddMulti, onRemoveMulti, multiValues = [], error, disabled 
 }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -102,11 +105,14 @@ export const FormDropdown: React.FC<{
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Fix: Convert options to strings for filtering and logic to ensure compatibility with enums
   const filteredOptions = options.filter(opt => 
-    opt.toLowerCase().includes(searchTerm.toLowerCase())
+    String(opt).toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   const handleSelect = (option: string) => {
+    // Fix: Guard against selection when component is disabled
+    if (disabled) return;
     if (isMulti && onAddMulti) {
       if (!multiValues.includes(option)) onAddMulti(option);
     } else {
@@ -118,21 +124,27 @@ export const FormDropdown: React.FC<{
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Fix: Disable keyboard interactions when disabled prop is true
+    if (disabled) return;
     if (!isOpen) {
       if (e.key === 'Enter' || e.key === 'ArrowDown') setIsOpen(true);
       return;
     }
+
+    const optionStrings = options.map(o => String(o));
+    const showAddOption = searchTerm && !optionStrings.includes(searchTerm);
+    const totalCount = filteredOptions.length + (showAddOption ? 1 : 0);
+
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setHighlightedIndex(prev => (prev + 1) % (filteredOptions.length + (searchTerm && !options.includes(searchTerm) ? 1 : 0)));
+      setHighlightedIndex(prev => (prev + 1) % totalCount);
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      const total = filteredOptions.length + (searchTerm && !options.includes(searchTerm) ? 1 : 0);
-      setHighlightedIndex(prev => (prev - 1 + total) % total);
+      setHighlightedIndex(prev => (prev - 1 + totalCount) % totalCount);
     } else if (e.key === 'Enter') {
       e.preventDefault();
       if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
-        handleSelect(filteredOptions[highlightedIndex]);
+        handleSelect(String(filteredOptions[highlightedIndex]));
       } else if (searchTerm) {
         handleSelect(searchTerm.trim());
       }
@@ -144,29 +156,41 @@ export const FormDropdown: React.FC<{
   return (
     <div className="relative" ref={containerRef}>
       <div 
-        tabIndex={0}
-        onClick={() => setIsOpen(!isOpen)}
+        // Fix: Update tabIndex to prevent focusing when disabled
+        tabIndex={disabled ? -1 : 0}
+        // Fix: Prevent toggle when disabled
+        onClick={() => !disabled && setIsOpen(!isOpen)}
         onKeyDown={handleKeyDown}
-        className={`group flex items-center justify-between w-full px-4 py-3 bg-gray-50 rounded-xl border ${error ? 'border-red-400' : 'border-gray-200'} hover:border-[#004A74]/40 focus:ring-2 focus:ring-[#004A74]/10 transition-all cursor-pointer shadow-sm outline-none`}
+        // Fix: Apply disabled styling (opacity, cursor)
+        className={`group flex items-center justify-between w-full px-4 py-3 bg-gray-50 rounded-xl border ${error ? 'border-red-400' : 'border-gray-200'} ${disabled ? 'opacity-50 cursor-not-allowed' : 'hover:border-[#004A74]/40 cursor-pointer'} focus:ring-2 focus:ring-[#004A74]/10 transition-all shadow-sm outline-none`}
       >
         <div className="flex flex-wrap gap-1.5 items-center overflow-hidden">
           {isMulti && multiValues.length > 0 ? (
             multiValues.map(v => (
               <span key={v} className="px-2 py-0.5 bg-[#004A74] text-white text-[10px] font-bold rounded-md flex items-center gap-1">
                 {v}
-                <XMarkIcon className="w-3 h-3 hover:text-red-300 transition-colors" onClick={(e) => { e.stopPropagation(); onRemoveMulti?.(v); }} />
+                {/* Fix: Hide or disable remove button interaction when disabled */}
+                <XMarkIcon 
+                  className={`w-3 h-3 ${disabled ? 'pointer-events-none opacity-50' : 'hover:text-red-300 transition-colors'}`} 
+                  onClick={(e) => { 
+                    if (disabled) return;
+                    e.stopPropagation(); 
+                    onRemoveMulti?.(v); 
+                  }} 
+                />
               </span>
             ))
           ) : (
             <span className={`text-sm ${value ? 'text-[#004A74] font-bold' : 'text-gray-400'}`}>
-              {value || placeholder}
+              {value ? String(value) : placeholder}
             </span>
           )}
         </div>
-        <ChevronDownIcon className={`w-4 h-4 text-gray-400 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+        <ChevronDownIcon className={`w-4 h-4 text-gray-400 transition-transform duration-300 ${isOpen && !disabled ? 'rotate-180' : ''}`} />
       </div>
 
-      {isOpen && (
+      {/* Fix: Ensure dropdown cannot be opened if disabled */}
+      {isOpen && !disabled && (
         <div className="absolute z-50 w-full mt-2 bg-white rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.15)] border border-gray-100 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
           <div className="p-2 bg-gray-50">
             <input 
@@ -181,19 +205,19 @@ export const FormDropdown: React.FC<{
           <div className="max-h-60 overflow-y-auto p-1">
             {filteredOptions.map((opt, idx) => (
               <button
-                key={opt}
+                key={String(opt)}
                 type="button"
-                onClick={() => handleSelect(opt)}
+                onClick={() => handleSelect(String(opt))}
                 className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-medium transition-colors ${highlightedIndex === idx ? 'bg-[#FED400]/20 text-[#004A74]' : 'hover:bg-[#FED400]/10 hover:text-[#004A74]'}`}
               >
-                {opt}
+                {String(opt)}
               </button>
             ))}
-            {searchTerm && !options.includes(searchTerm) && (
+            {searchTerm && !options.map(o => String(o)).includes(searchTerm) && (
               <button
                 type="button"
                 onClick={() => handleSelect(searchTerm)}
-                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold text-[#004A74] bg-[#FED400]/10 flex items-center gap-2`}
+                className={`w-full text-left px-4 py-2.5 rounded-xl text-sm font-bold text-[#004A74] bg-[#FED400]/10 flex items-center gap-2 ${highlightedIndex === filteredOptions.length ? 'bg-[#FED400]/20' : ''}`}
               >
                 <PlusSmallIcon className="w-5 h-5" /> Add: {searchTerm}
               </button>

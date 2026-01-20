@@ -1,20 +1,22 @@
 
 /**
- * XEENAPS PKM - SECURE BACKEND V37 (FAST CONVERTER INTEGRATION)
- * Menggunakan link MP3 eksternal untuk kecepatan download maksimal.
+ * XEENAPS PKM - SECURE BACKEND V38 (METADATA-FIRST YOUTUBE ANALYSIS)
+ * Logic: 
+ * 0. YouTube Data API v3 + Official Captions (Priority for Video)
+ * 1. Google Drive/Docs (Internal)
+ * 2. Native UrlFetch (Method 1 - Primary & Mandatory if Success > 200 chars)
+ * 3. ScrapingAnt (Method 2 - Backup only for Hard Blocks/Empty responses)
  */
 
 const CONFIG = {
   FOLDERS: {
-    MAIN_LIBRARY: '1WG5W6KHHLhKVK-eCq1bIQYif0ZoSxh9t',
-    TEMP_AUDIO: '1WG5W6KHHLhKVK-eCq1bIQYif0ZoSxh9t' 
+    MAIN_LIBRARY: '1WG5W6KHHLhKVK-eCq1bIQYif0ZoSxh9t'
   },
   SPREADSHEETS: {
     LIBRARY: '1NSofMlK1eENfucu2_aF-A3JRwAwTXi7QzTsuPGyFk8w',
     KEYS: '1QRzqKe42ck2HhkA-_yAGS-UHppp96go3s5oJmlrwpc0',
     AI_CONFIG: '1RVYM2-U5LRb8S8JElRSEv2ICHdlOp9pnulcAM8Nd44s'
   },
-  PYTHON_API_URL: 'https://xeenaps-v1.vercel.app/api/extract',
   SCHEMAS: {
     LIBRARY: [
       'id', 'title', 'type', 'category', 'topic', 'subTopic', 'author', 'authors', 'publisher', 'year', 
@@ -34,7 +36,7 @@ function doGet(e) {
     const action = e.parameter.action;
     if (action === 'getLibrary') return createJsonResponse({ status: 'success', data: getAllItems(CONFIG.SPREADSHEETS.LIBRARY, "Collections") });
     if (action === 'getAiConfig') return createJsonResponse({ status: 'success', data: getProviderModel('GEMINI') });
-    return createJsonResponse({ status: 'error', message: 'Invalid action' });
+    return createJsonResponse({ status: 'error', message: 'Invalid action: ' + action });
   } catch (err) {
     return createJsonResponse({ status: 'error', message: err.toString() });
   }
@@ -44,9 +46,8 @@ function doPost(e) {
   let body;
   try {
     body = JSON.parse(e.postData.contents);
-    console.log("Action: " + body.action);
   } catch(e) {
-    return createJsonResponse({ status: 'error', message: 'Malformed JSON' });
+    return createJsonResponse({ status: 'error', message: 'Malformed JSON request' });
   }
   
   const action = body.action;
@@ -58,14 +59,15 @@ function doPost(e) {
       const item = body.item;
       if (body.file && body.file.fileData) {
         const folder = DriveApp.getFolderById(CONFIG.FOLDERS.MAIN_LIBRARY);
-        const blob = Utilities.newBlob(Utilities.base64Decode(body.file.fileData), body.file.mimeType, body.file.fileName);
+        const mimeType = body.file.mimeType || 'application/octet-stream';
+        const blob = Utilities.newBlob(Utilities.base64Decode(body.file.fileData), mimeType, body.file.fileName);
         const file = folder.createFile(blob);
         item.fileId = file.getId();
       }
       saveToSheet(CONFIG.SPREADSHEETS.LIBRARY, "Collections", item);
       return createJsonResponse({ status: 'success' });
     }
-
+    
     if (action === 'deleteItem') {
       deleteFromSheet(CONFIG.SPREADSHEETS.LIBRARY, "Collections", body.id);
       return createJsonResponse({ status: 'success' });
@@ -75,11 +77,16 @@ function doPost(e) {
       let extractedText = "";
       let fileName = body.fileName || "Extracted Content";
       
-      if (body.url) {
-        extractedText = handleUrlExtraction(body.url);
-      } else if (body.fileData) {
-        const blob = Utilities.newBlob(Utilities.base64Decode(body.fileData), body.mimeType, fileName);
-        extractedText = `FILE_NAME: ${fileName}\n\n` + extractTextContent(blob, body.mimeType);
+      try {
+        if (body.url) {
+          extractedText = handleUrlExtraction(body.url);
+        } else if (body.fileData) {
+          const mimeType = body.mimeType || 'application/octet-stream';
+          const blob = Utilities.newBlob(Utilities.base64Decode(body.fileData), mimeType, fileName);
+          extractedText = `FILE_NAME: ${fileName}\n\n` + extractTextContent(blob, mimeType);
+        }
+      } catch (err) {
+        extractedText = "Extraction failed: " + err.toString();
       }
 
       return createJsonResponse({ 
@@ -90,175 +97,304 @@ function doPost(e) {
     }
     
     if (action === 'aiProxy') {
-      return createJsonResponse(handleAiRequest(body.provider, body.prompt, body.modelOverride));
+      const { provider, prompt, modelOverride } = body;
+      const result = handleAiRequest(provider, prompt, modelOverride);
+      return createJsonResponse(result);
     }
-    return createJsonResponse({ status: 'error', message: 'Invalid action' });
+    return createJsonResponse({ status: 'error', message: 'Invalid action: ' + action });
   } catch (err) {
-    console.error("Critical: " + err.toString());
     return createJsonResponse({ status: 'error', message: err.toString() });
   }
 }
 
-function handleUrlExtraction(url) {
-  const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
-  console.log("Extracting: " + url);
+function getFileIdFromUrl(url) {
+  const match = url.match(/[-\w]{25,}/);
+  return match ? match[0] : null;
+}
 
+/**
+ * OPTIMIZED handleUrlExtraction V38
+ * Logic: Strict prioritization to save ScrapingAnt tokens + YouTube Native Path.
+ */
+function handleUrlExtraction(url) {
+  // --- LAYER 0: YouTube Analysis (New Native Path) ---
+  const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
   if (isYouTube) {
     let videoId = "";
-    if (url.includes('youtu.be/')) videoId = url.split('/').pop().split('?')[0];
-    else { const match = url.match(/v=([^&]+)/); videoId = match ? match[1] : ""; }
-    
-    const ytInfo = getYoutubeVideoInfo(videoId);
-    let metadataStr = `YOUTUBE_METADATA:\nTitle: ${ytInfo.title}\nDescription: ${ytInfo.description}\n`;
-
-    const officialSubs = getYoutubeOfficialCaptions(videoId);
-    if (officialSubs && officialSubs.length > 300) {
-      console.log("Official Subs OK.");
-      return metadataStr + "\nOFFICIAL CAPTIONS:\n" + officialSubs;
+    if (url.includes('youtu.be/')) {
+      videoId = url.split('/').pop().split('?')[0];
+    } else {
+      const match = url.match(/v=([^&]+)/);
+      videoId = match ? match[1] : "";
     }
 
-    console.log("Calling Vercel V37 (Fast Converter)...");
-    try {
-      const vResponse = UrlFetchApp.fetch(CONFIG.PYTHON_API_URL, {
-        method: 'post',
-        contentType: 'application/json',
-        payload: JSON.stringify({ url: url }),
-        muteHttpExceptions: true
-      });
+    if (videoId) {
+      console.log("Processing YouTube Video ID: " + videoId);
+      const ytInfo = getYoutubeVideoInfo(videoId);
+      const captions = getYoutubeOfficialCaptions(videoId);
       
-      const vJson = JSON.parse(vResponse.getContentText());
-      if (vJson.status === 'success' && vJson.stream_url) {
-        console.log("Stream URL: " + vJson.stream_url);
-        // Tambahkan timeout lebih lama untuk download audio
-        const audioRes = UrlFetchApp.fetch(vJson.stream_url, { 
-          followRedirects: true,
-          muteHttpExceptions: true
-        });
-        
-        if (audioRes.getResponseCode() === 200) {
-          const transcript = processGroqWhisper(audioRes.getBlob());
-          return metadataStr + "\nWHISPER TRANSCRIPT:\n" + transcript;
-        } else {
-          console.error("Failed to download audio. Code: " + audioRes.getResponseCode());
+      return `YOUTUBE_METADATA:\n` +
+             `Title: ${ytInfo.title}\n` +
+             `Channel: ${ytInfo.channel}\n` +
+             `Date: ${ytInfo.publishedAt}\n` +
+             `Description: ${ytInfo.description}\n` +
+             `Keywords: ${ytInfo.tags}\n\n` +
+             `OFFICIAL_CAPTIONS:\n${captions || "No official captions found. Analyzing via Metadata only."}`;
+    }
+  }
+
+  const driveId = getFileIdFromUrl(url);
+  
+  // LAYER 1: Google Drive / Docs (Always First)
+  if (driveId && (url.includes('drive.google.com') || url.includes('docs.google.com'))) {
+    try {
+      const fileMeta = Drive.Files.get(driveId);
+      const mimeType = fileMeta.mimeType;
+      const isNative = mimeType.includes('google-apps');
+      
+      let rawContent = "";
+      if (isNative) {
+        if (mimeType.includes('document')) {
+          rawContent = DocumentApp.openById(driveId).getBody().getText();
+        } else if (mimeType.includes('spreadsheet')) {
+          rawContent = SpreadsheetApp.openById(driveId).getSheets().map(s => s.getDataRange().getValues().map(r => r.join(" ")).join("\n")).join("\n");
+        } else if (mimeType.includes('presentation')) {
+          rawContent = SlidesApp.openById(driveId).getSlides().map(s => s.getShapes().map(sh => { 
+            try { return sh.getText().asString(); } catch(e) { return ""; } 
+          }).join(" ")).join("\n");
+        }
+      } else {
+        const blob = DriveApp.getFileById(driveId).getBlob();
+        rawContent = extractTextContent(blob, mimeType);
+      }
+      
+      if (rawContent && rawContent.trim().length > 10) return rawContent;
+    } catch (e) { console.log("Drive failed: " + e.message); }
+  }
+
+  // LAYER 2: Native Fetch (Method 1) - Best for Wikipedia/Detik
+  let nativeContent = "";
+  try {
+    const response = UrlFetchApp.fetch(url, { 
+      muteHttpExceptions: true,
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" }
+    });
+    
+    if (response.getResponseCode() === 200) {
+      const html = response.getContentText();
+      if (!isBlocked(html)) {
+        const metadata = extractWebMetadata(html);
+        const body = cleanHtml(html);
+        nativeContent = metadata + "\n\n" + body;
+        if (body.length > 200) {
+          return nativeContent;
         }
       }
+    }
+  } catch (e) { console.log("Native fetch error: " + e.message); }
+
+  // LAYER 3: ScrapingAnt (Method 2 - Backup Only)
+  const saKey = getScrapingAntKey();
+  if (saKey) {
+    try {
+      const saUrl = `https://api.scrapingant.com/v2/general?url=${encodeURIComponent(url)}&x-api-key=${saKey}`;
+      const response = UrlFetchApp.fetch(saUrl, { muteHttpExceptions: true });
+      const html = response.getContentText();
+      
+      if (response.getResponseCode() === 200 && !isBlocked(html)) {
+        return extractWebMetadata(html) + "\n\n" + cleanHtml(html);
+      }
     } catch (e) {
-      console.error("Vercel/Whisper Error: " + e.toString());
+      console.log("ScrapingAnt failed: " + e.message);
     }
-
-    return metadataStr + "\nTRANSCRIPT_UNAVAILABLE: Analyzing via metadata only.";
   }
 
-  // Web Scraping
-  try {
-    const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true });
-    const html = response.getContentText();
-    const cleanText = html.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "")
-                          .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "")
-                          .replace(/<[^>]*>/g, " ")
-                          .replace(/\s+/g, " ")
-                          .trim();
-    return cleanText.substring(0, 50000);
-  } catch (e) {
-    return "Extraction failed: " + e.toString();
-  }
-}
-
-function processGroqWhisper(audioBlob) {
-  const apiKey = getKeysFromSheet('Groq', 2)[0];
-  const url = "https://api.groq.com/openai/v1/audio/transcriptions";
-  const boundary = "-------" + Utilities.getUuid();
-  const payload = Utilities.newBlob("").getBytes()
-    .concat(Utilities.newBlob("--" + boundary + "\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\nwhisper-large-v3\r\n--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.mp3\"\r\nContent-Type: audio/mpeg\r\n\r\n").getBytes())
-    .concat(audioBlob.getBytes())
-    .concat(Utilities.newBlob("\r\n--" + boundary + "--\r\n").getBytes());
-
-  const res = UrlFetchApp.fetch(url, { 
-    method: "post", 
-    contentType: "multipart/form-data; boundary=" + boundary, 
-    payload: payload, 
-    headers: { "Authorization": "Bearer " + apiKey }, 
-    muteHttpExceptions: true 
-  });
-  return JSON.parse(res.getContentText()).text || "Whisper extraction error.";
-}
-
-function handleAiRequest(provider, prompt, modelOverride) {
-  const providers = {
-    'GROQ': { url: 'https://api.groq.com/openai/v1/chat/completions', sheet: 'Groq', defaultModel: 'llama-3.3-70b-versatile' },
-    'GEMINI': { url: 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}', sheet: 'Gemini', defaultModel: 'gemini-1.5-flash' }
-  };
-  const config = providers[provider.toUpperCase()];
-  if (!config) return { status: 'error', message: 'Unknown Provider' };
-  const keys = getKeysFromSheet(config.sheet, 2);
-  const key = keys[Math.floor(Math.random() * keys.length)];
-  const model = modelOverride || config.defaultModel;
-  try {
-    if (provider.toUpperCase() === 'GEMINI') {
-      const apiUrl = config.url.replace('{model}', model).replace('{key}', key);
-      const res = UrlFetchApp.fetch(apiUrl, { method: 'post', contentType: 'application/json', payload: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }), muteHttpExceptions: true });
-      return { status: 'success', data: JSON.parse(res.getContentText()).candidates[0].content.parts[0].text };
-    } else {
-      const res = UrlFetchApp.fetch(config.url, { method: 'post', headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' }, payload: JSON.stringify({ model: model, messages: [{ role: 'user', content: prompt }], temperature: 0.1 }), muteHttpExceptions: true });
-      return { status: 'success', data: JSON.parse(res.getContentText()).choices[0].message.content };
-    }
-  } catch (e) { return { status: 'error', message: e.toString() }; }
+  if (nativeContent && nativeContent.length > 50) return nativeContent;
+  
+  throw new Error("All extraction methods failed for this URL.");
 }
 
 function getYoutubeVideoInfo(videoId) {
-  const response = YouTube.Videos.list('snippet', { id: videoId });
-  if (response.items && response.items.length > 0) {
-    const snip = response.items[0].snippet;
-    return { title: snip.title, description: snip.description };
+  try {
+    const response = YouTube.Videos.list('snippet', { id: videoId });
+    if (response.items && response.items.length > 0) {
+      const snip = response.items[0].snippet;
+      return {
+        title: snip.title,
+        channel: snip.channelTitle,
+        description: snip.description,
+        tags: (snip.tags || []).join(', '),
+        publishedAt: snip.publishedAt
+      };
+    }
+  } catch (e) {
+    console.error("YouTube API Error: " + e.toString());
   }
-  return { title: "Unknown Video", description: "" };
+  return { title: "Unknown Video", channel: "Unknown", description: "", tags: "", publishedAt: "-" };
 }
 
 function getYoutubeOfficialCaptions(videoId) {
   try {
     const response = UrlFetchApp.fetch(`https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=srv1`, { muteHttpExceptions: true });
-    if (response.getResponseCode() === 200 && response.getContentText().length > 100) return response.getContentText().replace(/<[^>]*>/g, ' ');
+    if (response.getResponseCode() === 200 && response.getContentText().length > 100) {
+      return response.getContentText().replace(/<[^>]*>/g, ' ');
+    }
   } catch (e) {}
   return null;
 }
 
-function setupDatabase() {
-  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.LIBRARY);
-  let sheet = ss.getSheetByName("Collections");
-  if (!sheet) {
-    sheet = ss.insertSheet("Collections");
-    sheet.appendRow(CONFIG.SCHEMAS.LIBRARY);
+function extractWebMetadata(html) {
+  let metaInfo = "";
+  const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  if (titleMatch) metaInfo += `WEBSITE_TITLE: ${titleMatch[1].trim()}\n`;
+  const authorMatch = html.match(/<meta[^>]*name=["']author["'][^>]*content=["']([^"']+)["']/i);
+  if (authorMatch) metaInfo += `WEBSITE_AUTHOR: ${authorMatch[1].trim()}\n`;
+  const siteMatch = html.match(/<meta[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i);
+  if (siteMatch) metaInfo += `WEBSITE_PUBLISHER: ${siteMatch[1].trim()}\n`;
+  return metaInfo;
+}
+
+function isBlocked(text) {
+  if (!text || text.length < 200) return true;
+  const criticalBlocked = ["access denied", "cloudflare", "security check", "captcha", "bot detection", "robot check"];
+  const textLower = text.toLowerCase();
+  if (text.length < 1500) {
+     return criticalBlocked.some(keyword => textLower.includes(keyword));
   }
-  return { status: 'success', message: 'Database initialized' };
+  return false;
+}
+
+function cleanHtml(html) {
+  return html.replace(/<script\b[^>]*>([\s\S]*?)<\/script>/gim, "")
+             .replace(/<style\b[^>]*>([\s\S]*?)<\/style>/gim, "")
+             .replace(/<[^>]*>/g, " ")
+             .replace(/\s+/g, " ")
+             .trim();
+}
+
+function getScrapingAntKey() {
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.KEYS);
+    const sheet = ss.getSheetByName("Scraping");
+    return sheet ? sheet.getRange("A1").getValue().toString().trim() : null;
+  } catch (e) { return null; }
 }
 
 function extractTextContent(blob, mimeType) {
-  if (mimeType === 'application/pdf') {
-    const file = Drive.Files.create({ name: "temp_pdf_ocr", mimeType: "application/vnd.google-apps.document" }, blob);
-    const text = DocumentApp.openById(file.id).getBody().getText();
-    Drive.Files.remove(file.id);
-    return text;
+  if (mimeType.includes('text/') || mimeType.includes('csv')) return blob.getDataAsString();
+  let targetMimeType = 'application/vnd.google-apps.document';
+  let appType = 'doc';
+  if (mimeType.includes('spreadsheet') || mimeType.includes('excel')) {
+    targetMimeType = 'application/vnd.google-apps.spreadsheet';
+    appType = 'sheet';
+  } else if (mimeType.includes('presentation') || mimeType.includes('powerpoint')) {
+    targetMimeType = 'application/vnd.google-apps.presentation';
+    appType = 'slide';
   }
-  return blob.getDataAsString();
+  const resource = { name: "Xeenaps_Ghost_" + Utilities.getUuid(), mimeType: targetMimeType };
+  let tempFileId = null;
+  try {
+    const tempFile = Drive.Files.create(resource, blob);
+    tempFileId = tempFile.id;
+    let text = "";
+    if (appType === 'doc') {
+      text = DocumentApp.openById(tempFileId).getBody().getText();
+    } else if (appType === 'sheet') {
+      text = SpreadsheetApp.openById(tempFileId).getSheets().map(s => s.getDataRange().getValues().map(r => r.join(" ")).join("\n")).join("\n");
+    } else if (appType === 'slide') {
+      text = SlidesApp.openById(tempFileId).getSlides().map(s => s.getShapes().map(sh => { try { return sh.getText().asString(); } catch(e) { return ""; } }).join(" ")).join("\n");
+    }
+    Drive.Files.remove(tempFileId); 
+    return text;
+  } catch (e) {
+    if (tempFileId) { try { Drive.Files.remove(tempFileId); } catch(i) {} }
+    throw new Error("Conversion failed: " + e.message);
+  }
 }
 
-function createJsonResponse(data) {
-  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+function setupDatabase() {
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.LIBRARY);
+    let sheet = ss.getSheetByName("Collections");
+    if (!sheet) sheet = ss.insertSheet("Collections");
+    const headers = CONFIG.SCHEMAS.LIBRARY;
+    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#f3f3f3");
+    sheet.setFrozenRows(1);
+    return { status: 'success', message: 'Database initialized.' };
+  } catch (err) { return { status: 'error', message: err.toString() }; }
+}
+
+function getProviderModel(providerName) {
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.AI_CONFIG);
+    const sheet = ss.getSheetByName('AI');
+    if (!sheet) return { model: getDefaultModel(providerName) };
+    const data = sheet.getDataRange().getValues();
+    for (let i = 0; i < data.length; i++) {
+      if (data[i][0] && data[i][0].toString().toUpperCase() === providerName.toUpperCase()) {
+        return { model: data[i][1] ? data[i][1].trim() : getDefaultModel(providerName) };
+      }
+    }
+  } catch (e) {}
+  return { model: getDefaultModel(providerName) };
+}
+
+function getDefaultModel(provider) {
+  return provider.toUpperCase() === 'GEMINI' ? 'gemini-3-flash-preview' : 'meta-llama/llama-4-scout-17b-16e-instruct';
+}
+
+function handleAiRequest(provider, prompt, modelOverride) {
+  const keys = (provider === 'groq') ? getKeysFromSheet('Groq', 2) : getKeysFromSheet('ApiKeys', 1);
+  if (!keys || keys.length === 0) return { status: 'error', message: 'No keys.' };
+  const config = getProviderModel(provider);
+  const model = modelOverride || config.model;
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      let responseText = (provider === 'groq') ? callGroqApi(keys[i], model, prompt) : callGeminiApi(keys[i], model, prompt);
+      if (responseText) return { status: 'success', data: responseText };
+    } catch (err) {}
+  }
+  return { status: 'error', message: 'AI failed.' };
+}
+
+function callGroqApi(apiKey, model, prompt) {
+  const url = "https://api.groq.com/openai/v1/chat/completions";
+  const payload = { model: model, messages: [{ role: "system", content: "Academic librarian. JSON." }, { role: "user", content: prompt }], temperature: 0.1, response_format: { type: "json_object" } };
+  const res = UrlFetchApp.fetch(url, { method: "post", contentType: "application/json", headers: { "Authorization": "Bearer " + apiKey }, payload: JSON.stringify(payload), muteHttpExceptions: true });
+  return JSON.parse(res.getContentText()).choices[0].message.content;
+}
+
+function callGeminiApi(apiKey, model, prompt) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const payload = { contents: [{ parts: [{ text: prompt }] }] };
+  const res = UrlFetchApp.fetch(url, { method: "post", contentType: "application/json", payload: JSON.stringify(payload), muteHttpExceptions: true });
+  return JSON.parse(res.getContentText()).candidates[0].content.parts[0].text;
+}
+
+function getKeysFromSheet(sheetName, colIndex) {
+  try {
+    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.KEYS);
+    const sheet = ss.getSheetByName(sheetName);
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) return [];
+    return sheet.getRange(2, colIndex, lastRow - 1, 1).getValues().map(r => r[0]).filter(k => k);
+  } catch (e) { return []; }
 }
 
 function getAllItems(ssId, sheetName) {
   const ss = SpreadsheetApp.openById(ssId);
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return [];
-  const vals = sheet.getDataRange().getValues();
-  if (vals.length <= 1) return [];
-  const heads = vals[0];
-  return vals.slice(1).map(row => {
+  const values = sheet.getDataRange().getValues();
+  if (values.length <= 1) return [];
+  const headers = values[0];
+  return values.slice(1).map(row => {
     let item = {};
-    heads.forEach((h, i) => {
-      let v = row[i];
-      if (['tags', 'authors', 'keywords', 'labels'].includes(h)) { try { v = JSON.parse(v || '[]'); } catch(e) { v = []; } }
-      item[h] = v;
+    headers.forEach((h, i) => {
+      let val = row[i];
+      if (['tags', 'authors', 'keywords', 'labels'].includes(h)) { try { val = JSON.parse(row[i] || '[]'); } catch(e) { val = []; } }
+      item[h] = val;
     });
     return item;
   });
@@ -266,33 +402,26 @@ function getAllItems(ssId, sheetName) {
 
 function saveToSheet(ssId, sheetName, item) {
   const ss = SpreadsheetApp.openById(ssId);
-  const sheet = ss.getSheetByName(sheetName);
+  let sheet = ss.getSheetByName(sheetName);
+  if (!sheet) { setupDatabase(); sheet = ss.getSheetByName(sheetName); }
   const headers = CONFIG.SCHEMAS.LIBRARY;
-  const row = headers.map(h => {
-    const v = item[h];
-    return Array.isArray(v) ? JSON.stringify(v) : (v || '');
+  const rowData = headers.map(h => {
+    const val = item[h];
+    return (Array.isArray(val) || (typeof val === 'object' && val !== null)) ? JSON.stringify(val) : (val || '');
   });
-  sheet.appendRow(row);
+  sheet.appendRow(rowData);
 }
 
 function deleteFromSheet(ssId, sheetName, id) {
   const ss = SpreadsheetApp.openById(ssId);
   const sheet = ss.getSheetByName(sheetName);
+  if (!sheet) return;
   const data = sheet.getDataRange().getValues();
   for (let i = 1; i < data.length; i++) {
     if (data[i][0] === id) { sheet.deleteRow(i + 1); break; }
   }
 }
 
-function getKeysFromSheet(sn, ci) {
-  try {
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.KEYS);
-    const sheet = ss.getSheetByName(sn);
-    return sheet.getRange(2, ci, sheet.getLastRow() - 1, 1).getValues().map(r => r[0]).filter(k => k);
-  } catch (e) { return []; }
-}
-
-function getFileIdFromUrl(url) {
-  const match = url.match(/[-\w]{25,}/);
-  return match ? match[0] : null;
+function createJsonResponse(data) {
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
 }

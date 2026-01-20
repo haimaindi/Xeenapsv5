@@ -1,4 +1,3 @@
-
 export enum SourceType {
   LINK = 'LINK',
   FILE = 'FILE',
@@ -45,6 +44,7 @@ export interface LibraryItem {
   authors: string[];
   publisher: string;
   year: string;
+  doi?: string; // New: DOI Support
   
   // Collection Info
   addMethod: 'LINK' | 'FILE';
@@ -52,13 +52,15 @@ export interface LibraryItem {
   format: FileFormat;
   url?: string;
   fileId?: string;
+  youtubeId?: string; // New: YouTube Embed URL
+  imageView?: string; // New: Image Preview Link
   
   // Tags & Labels
   keywords: string[];
   labels: string[];
   tags: string[];
   
-  // Academic Citations (Expanded to 6 specific fields)
+  // Academic Citations
   inTextAPA?: string;
   inTextHarvard?: string;
   inTextChicago?: string;
@@ -70,12 +72,12 @@ export interface LibraryItem {
   researchMethodology?: string;
   abstract?: string;
   summary?: string;
-  strength?: string;             // Numbered List
-  weakness?: string;             // Numbered List
-  unfamiliarTerminology?: string; // Numbered List
-  supportingReferences?: string; // Numbered List
-  videoRecommendation?: string;  // YouTube Embed ID
-  quickTipsForYou?: string;      // Narrative Paragraph
+  strength?: string;
+  weakness?: string;
+  unfamiliarTerminology?: string;
+  supportingReferences?: string;
+  videoRecommendation?: string;
+  quickTipsForYou?: string;
   
   // Large Data Handling (Chunks)
   extractedInfo1?: string;

@@ -6,12 +6,25 @@ function setupDatabase() {
   try {
     const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.LIBRARY);
     let sheet = ss.getSheetByName("Collections");
-    if (!sheet) sheet = ss.insertSheet("Collections");
-    const headers = CONFIG.SCHEMAS.LIBRARY;
-    sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#f3f3f3");
-    sheet.setFrozenRows(1);
-    return { status: 'success', message: 'Database "Collections" has been successfully initialized.' };
+    if (!sheet) {
+      sheet = ss.insertSheet("Collections");
+      const headers = CONFIG.SCHEMAS.LIBRARY;
+      sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
+      sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#f3f3f3");
+      sheet.setFrozenRows(1);
+    } else {
+      // AUTO-UPDATE COLUMNS: Detect and append missing headers from schema
+      const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const targetHeaders = CONFIG.SCHEMAS.LIBRARY;
+      const missingHeaders = targetHeaders.filter(h => !currentHeaders.includes(h));
+      
+      if (missingHeaders.length > 0) {
+        const startCol = currentHeaders.length + 1;
+        sheet.getRange(1, startCol, 1, missingHeaders.length).setValues([missingHeaders]);
+        sheet.getRange(1, startCol, 1, missingHeaders.length).setFontWeight("bold").setBackground("#f3f3f3");
+      }
+    }
+    return { status: 'success', message: 'Database "Collections" has been successfully initialized/updated.' };
   } catch (err) { return { status: 'error', message: err.toString() }; }
 }
 
@@ -41,7 +54,7 @@ function saveToSheet(ssId, sheetName, item) {
   const ss = SpreadsheetApp.openById(ssId);
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) { setupDatabase(); sheet = ss.getSheetByName(sheetName); }
-  const headers = CONFIG.SCHEMAS.LIBRARY;
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const rowData = headers.map(h => {
     const val = item[h];
     return (Array.isArray(val) || (typeof val === 'object' && val !== null)) ? JSON.stringify(val) : (val || '');

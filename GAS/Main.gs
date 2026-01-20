@@ -28,13 +28,30 @@ function doPost(e) {
     
     if (action === 'saveItem') {
       const item = body.item;
+      
+      // 1. Handle File Upload Logic (including ImageView)
       if (body.file && body.file.fileData) {
         const folder = DriveApp.getFolderById(CONFIG.FOLDERS.MAIN_LIBRARY);
         const mimeType = body.file.mimeType || 'application/octet-stream';
         const blob = Utilities.newBlob(Utilities.base64Decode(body.file.fileData), mimeType, body.file.fileName);
         const file = folder.createFile(blob);
-        item.fileId = file.getId();
+        const fileId = file.getId();
+        item.fileId = fileId;
+        
+        // If file is an image, generate ImageView URL
+        if (mimeType.toLowerCase().includes('image/')) {
+          item.imageView = 'https://lh3.googleusercontent.com/d/' + fileId;
+        }
       }
+
+      // 2. Handle YouTube ID Logic (ID Youtube column)
+      if (item.url && (item.url.includes('youtube.com') || item.url.includes('youtu.be'))) {
+        const ytid = extractYoutubeId(item.url);
+        if (ytid) {
+          item.youtubeId = 'https://www.youtube.com/embed/' + ytid;
+        }
+      }
+      
       saveToSheet(CONFIG.SPREADSHEETS.LIBRARY, "Collections", item);
       return createJsonResponse({ status: 'success' });
     }
@@ -76,28 +93,23 @@ function doPost(e) {
   }
 }
 
-/**
- * Routes URL extraction to specific modules based on URL patterns
- */
+function extractYoutubeId(url) {
+  const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|\&v=)([^#\&\?]*).*/;
+  const match = url.match(regExp);
+  return (match && match[2].length === 11) ? match[2] : null;
+}
+
 function routerUrlExtraction(url) {
-  // 1. YouTube
   if (url.includes('youtube.com') || url.includes('youtu.be')) {
     return handleYoutubeExtraction(url);
   }
-  
-  // 2. Google Drive / Docs
   const driveId = getFileIdFromUrl(url);
   if (driveId && (url.includes('drive.google.com') || url.includes('docs.google.com'))) {
     return handleDriveExtraction(url, driveId);
   }
-  
-  // 3. Web (Default Generic Scraper)
   return handleWebExtraction(url);
 }
 
-/**
- * Master handler for AI requests switching between providers
- */
 function handleAiRequest(provider, prompt, modelOverride) {
   if (provider === 'groq') {
     return callGroqLibrarian(prompt, modelOverride);

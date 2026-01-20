@@ -42,12 +42,20 @@ function handleWebExtraction(url) {
 
 function extractWebMetadata(html) {
   let metaInfo = "";
+  
+  // Basic Title/Author/Publisher
   const titleMatch = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
   if (titleMatch) metaInfo += `WEBSITE_TITLE: ${titleMatch[1].trim()}\n`;
   const authorMatch = html.match(/<meta[^>]*name=["']author["'][^>]*content=["']([^"']+)["']/i);
   if (authorMatch) metaInfo += `WEBSITE_AUTHOR: ${authorMatch[1].trim()}\n`;
   const siteMatch = html.match(/<meta[^>]*property=["']og:site_name["'][^>]*content=["']([^"']+)["']/i);
   if (siteMatch) metaInfo += `WEBSITE_PUBLISHER: ${siteMatch[1].trim()}\n`;
+
+  // PRIMARY DOI DETECTION (Meta Tags) - Critical to ignore reference list DOIs
+  const doiMatch = html.match(/<meta[^>]*name=["'](?:citation_doi|dc.identifier)["'][^>]*content=["']([^"']+)["']/i) ||
+                   html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["'](?:citation_doi|dc.identifier)["']/i);
+  if (doiMatch) metaInfo += `PRIMARY_DOI: ${doiMatch[1].trim()}\n`;
+
   return metaInfo;
 }
 

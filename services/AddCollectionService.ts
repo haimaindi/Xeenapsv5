@@ -3,7 +3,7 @@ import { callAiProxy } from "./gasService";
 
 /**
  * AddCollectionService - Metadata Extraction via AI Proxy (GROQ).
- * FOCUS: Basic metadata, robust citations, keywords, and labels from raw text.
+ * FOCUS: Basic metadata, robust citations, DOI, keywords, and labels.
  */
 export const extractMetadataWithAI = async (textSnippet: string): Promise<Partial<LibraryItem>> => {
   try {
@@ -19,12 +19,19 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
     - "authors": Use the "Channel" name as the only item in the array.
     - "title": Use the "Title" found in the metadata section.
     - "year": Guess the year from the content or transcript context if not found.
+    - "doi": EMPTY STRING.
     - "inTextAPA", "inTextHarvard", "inTextChicago", "bibAPA", "bibHarvard", "bibChicago": MUST BE EMPTY STRINGS.
     - ANALYZE the first few paragraphs of the transcript to determine the precise Topic and Subtopic.
     ----------------------------------------------------------
 
+    --- CRITICAL INSTRUCTION FOR DOI ---
+    - SEARCH for the PRIMARY DOI of the document (usually found in headers or first page).
+    - Pattern: 10.xxxx/xxxxx
+    - IMPORTANT: IGNORE any DOIs found in the "Reference", "Bibliography", or "Literature Cited" sections at the end of the text.
+    ------------------------------------
+
     SCOPE LIMITATION (CRITICAL):
-    - ANALYZE ONLY: title, topic, subTopic, authors, publisher, year, keywords, labels, and citation fields.
+    - ANALYZE ONLY: title, topic, subTopic, authors, publisher, year, doi, keywords, labels, and citation fields.
     - DO NOT analyze: researchMethodology, abstract, summary, etc.
 
     CRITICAL INSTRUCTION FOR ROBUSTNESS:
@@ -32,6 +39,8 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
        - "title": Full official title.
        - "authors": Array of full names (For videos, this is the Channel Name).
        - "publisher": Journal name or "YouTube".
+       - "year": YYYY format.
+       - "doi": Primary DOI only.
        - "bibAPA", "bibHarvard", "bibChicago": Full bibliographic entries (Keep Empty for Videos).
     
     2. CONCISE FIELDS:
@@ -51,6 +60,7 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
       "authors": ["Name"],
       "year": "YYYY",
       "publisher": "Name",
+      "doi": "Primary DOI",
       "category": "Video or Original Research",
       "topic": "Two Words",
       "subTopic": "Two Words",

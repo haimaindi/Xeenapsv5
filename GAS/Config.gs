@@ -12,8 +12,8 @@ const CONFIG = {
   },
   SCHEMAS: {
     LIBRARY: [
-      'id', 'title', 'type', 'category', 'topic', 'subTopic', 'author', 'authors', 'publisher', 'year', 
-      'source', 'format', 'url', 'fileId', 'tags', 'createdAt', 'updatedAt',
+      'id', 'title', 'type', 'category', 'topic', 'subTopic', 'author', 'authors', 'publisher', 'year', 'doi',
+      'source', 'format', 'url', 'fileId', 'youtubeId', 'imageView', 'tags', 'createdAt', 'updatedAt',
       'inTextAPA', 'inTextHarvard', 'inTextChicago', 'bibAPA', 'bibHarvard', 'bibChicago',
       'researchMethodology', 'abstract', 'summary', 
       'strength', 'weakness', 'unfamiliarTerminology', 'supportingReferences', 

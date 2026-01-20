@@ -3,7 +3,7 @@ import { callAiProxy } from "./gasService";
 
 /**
  * AddCollectionService - Metadata Extraction via AI Proxy (GROQ).
- * FOCUS: Gap-filling, robust formatting, and protective data handling.
+ * FOCUS: Gap-filling, robust formatting, protective data handling, and full citation generation.
  */
 export const extractMetadataWithAI = async (textSnippet: string, existingData: Partial<LibraryItem> = {}): Promise<Partial<LibraryItem>> => {
   try {
@@ -15,13 +15,16 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
     --- MANDATORY WORKFLOW ---
     1. GAP-FILLING ONLY: Fill ONLY fields that are empty or "N/A" in the "EXISTING_DATA" section.
     2. DATA PROTECTION: DO NOT OVERWRITE any valid metadata provided in "EXISTING_DATA". 
-    3. NO HALLUCINATION: If identifiers (DOI, ISBN, ISSN, PMID, Bibcode, ArXiv) are NOT explicitly found in the text, leave them empty. DO NOT guess or hallucinate these values.
-    4. ABSTRACT CLEANING & FORMATTING:
+    3. CITATION GENERATION: You MUST generate 6 academic citations based on the available Title, Authors, Year, and Publisher/Journal.
+       - Required styles: APA, Harvard, Chicago.
+       - Required formats: In-Text and Full Bibliography.
+    4. NO HALLUCINATION: If identifiers (DOI, ISBN, ISSN, PMID, ArXiv) are NOT explicitly found in the text, leave them empty. DO NOT guess or hallucinate these values.
+    5. ABSTRACT CLEANING & FORMATTING:
        - Keep original language (DO NOT TRANSLATE).
        - Remove all special characters like '*', '#', or double asterisks.
        - If sub-headers (e.g., Introduction, Methods, Results, Conclusion) are present, format them as: <b>Header Name:</b> followed by a line break.
        - Ensure a clean, readable flow.
-    5. THEMATIC ANALYSIS: Determine Category, Topic, and SubTopic accurately.
+    6. THEMATIC ANALYSIS: Determine Category, Topic, and SubTopic accurately.
     --------------------------
 
     EXISTING_DATA:
@@ -41,15 +44,18 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
       "issn": "Only if explicit in snippet",
       "pmid": "Only if explicit in snippet",
       "arxivId": "Only if explicit in snippet",
-      "bibcode": "Only if explicit in snippet",
       "category": "e.g., Original Research",
       "topic": "Exactly 2 words",
       "subTopic": "Exactly 2 words",
       "abstract": "Cleaned and formatted abstract",
       "keywords": ["5 key terms"],
       "labels": ["3 thematic labels"],
-      "inTextAPA": "Citation format",
-      "bibAPA": "Full bibliographic entry"
+      "inTextAPA": "APA In-text citation",
+      "inTextHarvard": "Harvard In-text citation",
+      "inTextChicago": "Chicago In-text citation",
+      "bibAPA": "Full APA Bibliographic entry",
+      "bibHarvard": "Full Harvard Bibliographic entry",
+      "bibChicago": "Full Chicago Bibliographic entry"
     }`;
 
     const response = await callAiProxy('groq', prompt);

@@ -87,7 +87,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
 
   // MULTI-STAGE ANALYSIS CHAIN
   const runExtractionWorkflow = async (extractedText: string, chunks: string[], detectedDoi?: string) => {
-    // Correct destructuring to avoid passing chunks to LibraryItem partial
+    // destructuring to avoid passing chunks to LibraryItem partial
     const { chunks: _c, ...formDataWithoutChunks } = formData;
     let baseData: Partial<LibraryItem> = formDataWithoutChunks;
 

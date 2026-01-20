@@ -1,7 +1,7 @@
 /**
  * XEENAPS PKM - SECURE BACKEND V30 (MAXIMIZED NATIVE + EMERGENCY SCRAPINGANT)
  * Logic: 
- * 0. YouTube Proxy (Vercel Python) - ADDED FOR VIDEO SUPPORT
+ * 0. YouTube Proxy (Vercel Python Serverless) - ADDED FOR VIDEO SUPPORT
  * 1. Google Drive/Docs (Internal)
  * 2. Native UrlFetch (Method 1 - Primary & Mandatory if Success > 200 chars)
  * 3. ScrapingAnt (Method 2 - Backup only for Hard Blocks/Empty responses)
@@ -16,7 +16,7 @@ const CONFIG = {
     KEYS: '1QRzqKe42ck2HhkA-_yAGS-UHppp96go3s5oJmlrwpc0',
     AI_CONFIG: '1RVYM2-U5LRb8S8JElRSEv2ICHdlOp9pnulcAM8Nd44s'
   },
-  // POINT TO YOUR VERCEL ENDPOINT
+  // POINT TO YOUR VERCEL SERVERLESS ENDPOINT
   PYTHON_API_URL: 'https://xeenaps-v1.vercel.app/api/extract',
   SCHEMAS: {
     LIBRARY: [
@@ -118,7 +118,7 @@ function getFileIdFromUrl(url) {
  * Logic: Strict prioritization to save ScrapingAnt tokens.
  */
 function handleUrlExtraction(url) {
-  // LAYER 0: YouTube Extraction (via Vercel Proxy)
+  // LAYER 0: YouTube Extraction (via Vercel Python Serverless Function)
   if (url.includes('youtube.com') || url.includes('youtu.be')) {
     try {
       const response = UrlFetchApp.fetch(CONFIG.PYTHON_API_URL, {
@@ -132,7 +132,7 @@ function handleUrlExtraction(url) {
         if (json.status === 'success') return json.data;
       }
     } catch (e) {
-      console.log("YouTube proxy call failed: " + e.message);
+      console.log("YouTube proxy failed: " + e.message);
     }
   }
 
@@ -175,13 +175,11 @@ function handleUrlExtraction(url) {
     
     if (response.getResponseCode() === 200) {
       const html = response.getContentText();
-      // If native fetch isn't explicitly blocked by a bot-wall
       if (!isBlocked(html)) {
         const metadata = extractWebMetadata(html);
         const body = cleanHtml(html);
         nativeContent = metadata + "\n\n" + body;
 
-        // CRITICAL: If we have > 200 chars of actual body text, Method 1 is successful. STOP HERE.
         if (body.length > 200) {
           return nativeContent;
         }
@@ -190,7 +188,6 @@ function handleUrlExtraction(url) {
   } catch (e) { console.log("Native fetch error: " + e.message); }
 
   // LAYER 3: ScrapingAnt (Method 2 - Backup Only)
-  // Only reached if Method 1 returned < 200 chars or was blocked.
   const saKey = getScrapingAntKey();
   if (saKey) {
     try {
@@ -206,7 +203,6 @@ function handleUrlExtraction(url) {
     }
   }
 
-  // FINAL FALLBACK: If ScrapingAnt also failed, return whatever Method 1 got, even if short.
   if (nativeContent && nativeContent.length > 50) return nativeContent;
   
   throw new Error("All extraction methods failed for this URL.");
@@ -224,11 +220,10 @@ function extractWebMetadata(html) {
 }
 
 function isBlocked(text) {
-  if (!text || text.length < 200) return true; // Threshold lowered to 200
+  if (!text || text.length < 200) return true;
   const criticalBlocked = ["access denied", "cloudflare", "security check", "captcha", "bot detection", "robot check"];
   const textLower = text.toLowerCase();
   
-  // We only consider it blocked if these keywords appear in a relatively short text snippet
   if (text.length < 1500) {
      return criticalBlocked.some(keyword => textLower.includes(keyword));
   }

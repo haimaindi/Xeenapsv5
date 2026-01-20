@@ -5,12 +5,11 @@ from youtube_transcript_api import YouTubeTranscriptApi
 
 app = Flask(__name__)
 
-# Set max content length to 25MB (though only URLs will be sent)
+# Set max content length to 25MB
 app.config['MAX_CONTENT_LENGTH'] = 25 * 1024 * 1024
 
 def extract_youtube_data(url):
     video_id = None
-    # Support for youtu.be/ID or youtube.com/watch?v=ID
     if 'youtu.be/' in url:
         video_id = url.split('/')[-1].split('?')[0]
     elif 'youtube.com/watch' in url:
@@ -32,7 +31,7 @@ def extract_youtube_data(url):
 
     transcript_text = ""
     try:
-        # Try fetching transcript (ID priority, then EN)
+        # Try fetching transcript (Indonesian priority, then English)
         transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['id', 'en'])
         transcript_text = " ".join([t['text'] for t in transcript_list])
     except Exception as e:
@@ -43,7 +42,6 @@ def extract_youtube_data(url):
 @app.route('/api/extract', methods=['POST'])
 def extract():
     try:
-        # We only expect JSON with a 'url' field for YouTube extraction
         if request.is_json:
             data = request.get_json()
             url = data.get('url')

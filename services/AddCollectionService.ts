@@ -17,7 +17,7 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
     - "category": MUST be exactly "Video".
     - "publisher": MUST be exactly "YouTube".
     - "authors": Use the "Channel" name as the only item in the array.
-    - "title": Use the "Title" found in the metadata.
+    - "title": Use the "Title" found in the metadata section.
     - "year": Guess the year from the content or transcript context if not found.
     - "inTextAPA", "inTextHarvard", "inTextChicago", "bibAPA", "bibHarvard", "bibChicago": MUST BE EMPTY STRINGS.
     ----------------------------------------
@@ -29,9 +29,9 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
     CRITICAL INSTRUCTION FOR ROBUSTNESS:
     1. COMPLETE FIELDS (NO TRUNCATION):
        - "title": Full official title.
-       - "authors": Array of full names.
+       - "authors": Array of full names (For videos, this is the Channel Name).
        - "publisher": Journal name or "YouTube".
-       - "bibAPA", "bibHarvard", "bibChicago": Full bibliographic entries (Empty for Videos).
+       - "bibAPA", "bibHarvard", "bibChicago": Full bibliographic entries (Keep Empty for Videos).
     
     2. CONCISE FIELDS:
        - "topic": Exactly 2 words.

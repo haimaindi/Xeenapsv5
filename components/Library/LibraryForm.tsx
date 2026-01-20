@@ -35,7 +35,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
   const lastExtractedUrl = useRef<string>("");
   
   const [formData, setFormData] = useState({
-    addMethod: 'LINK' as 'LINK' | 'FILE',
+    addMethod: 'FILE' as 'LINK' | 'FILE', // Swapped initial value to FILE
     type: LibraryType.LITERATURE, 
     category: 'Original Research',
     topic: '',
@@ -158,7 +158,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     e.preventDefault();
     setIsSubmitting(true);
     
-    // Show Premium Loading Modal
     Swal.fire({
       title: 'Registering Item...',
       text: formData.addMethod === 'FILE' 
@@ -220,21 +219,25 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     <FormPageContainer>
       <FormStickyHeader title="Add Collection" subtitle="Expand your digital library" onBack={() => navigate('/')} rightElement={
         <div className="flex bg-gray-100/50 p-1.5 rounded-2xl gap-1 w-full md:w-auto">
-          <button type="button" onClick={() => setFormData({...formData, addMethod: 'LINK'})} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'LINK' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74] disabled:opacity-50'}`}><LinkIcon className="w-4 h-4" /> LINK</button>
+          {/* Swapped order: FILE first, then LINK */}
           <button type="button" onClick={() => setFormData({...formData, addMethod: 'FILE'})} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'FILE' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74] disabled:opacity-50'}`}><DocumentIcon className="w-4 h-4" /> FILE</button>
+          <button type="button" onClick={() => setFormData({...formData, addMethod: 'LINK'})} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'LINK' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74] disabled:opacity-50'}`}><LinkIcon className="w-4 h-4" /> LINK</button>
         </div>
       } />
       <FormContentArea>
         <form onSubmit={handleSubmit} className="space-y-8">
           {formData.addMethod === 'LINK' ? (
             <FormField label="Reference URL" required error={!formData.url}>
-              <div className="relative group">
-                <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center">
-                  {isExtracting ? <ArrowPathIcon className="w-5 h-5 text-[#004A74] animate-spin" /> : <LinkIcon className="w-5 h-5 text-gray-300 group-focus-within:text-[#004A74]" />}
+              <div className="space-y-3">
+                <div className="relative group">
+                  <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center">
+                    {isExtracting ? <ArrowPathIcon className="w-5 h-5 text-[#004A74] animate-spin" /> : <LinkIcon className="w-5 h-5 text-gray-300 group-focus-within:text-[#004A74]" />}
+                  </div>
+                  <input className={`w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl focus:ring-2 border ${!formData.url ? 'border-red-300' : 'border-gray-200'} text-sm font-medium transition-all ${isFormDisabled ? 'opacity-80' : ''}`} placeholder="Paste research link..." value={formData.url} onChange={(e) => setFormData({...formData, url: e.target.value})} disabled={isFormDisabled} />
                 </div>
-                <input className={`w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl focus:ring-2 border ${!formData.url ? 'border-red-300' : 'border-gray-200'} text-sm font-medium transition-all ${isFormDisabled ? 'opacity-80' : ''}`} placeholder="Paste research link..." value={formData.url} onChange={(e) => setFormData({...formData, url: e.target.value})} disabled={isFormDisabled} />
+                {/* Extraction status moved below input field */}
                 {isExtracting && (
-                  <div className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-2">
+                  <div className="flex items-center gap-2 px-2 animate-in fade-in slide-in-from-top-1 duration-300">
                     <SparklesIcon className="w-4 h-4 text-[#FED400] animate-pulse" />
                     <span className="text-[10px] font-black text-[#004A74] uppercase tracking-tighter">
                       {extractionStage === 'READING' ? 'Content Extraction...' : extractionStage === 'AI_ANALYSIS' ? 'AI Analyzing Content...' : 'Bypassing Protection...'}

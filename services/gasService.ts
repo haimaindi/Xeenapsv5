@@ -123,11 +123,8 @@ export const saveLibraryItem = async (item: LibraryItem, fileContent?: any): Pro
       body: JSON.stringify({ action: 'saveItem', item, file: fileContent }),
     });
     const result = await res.json();
-    if (result.status === 'success') {
-      Toast.fire({ icon: 'success', title: 'Collection saved', background: '#004A74', color: '#FFFFFF' });
-      return true;
-    }
-    return false;
+    // Removed Toast.fire here to satisfy user request for removing flickery notification
+    return result.status === 'success';
   } catch (error) {
     return false;
   }

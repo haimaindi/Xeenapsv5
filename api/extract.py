@@ -19,14 +19,24 @@ INVIDIOUS_INSTANCES = [
 def get_audio_stream_url(url):
     """
     Attempts to get the direct audio stream URL.
-    Hierarchy: 1. yt-dlp (Native), 2. Invidious Proxy API
+    Hierarchy: 1. yt-dlp (Native with Android Spoofing), 2. Invidious Proxy API
     """
-    # 1. Try yt-dlp first
+    # 1. Try yt-dlp with ANDROID SPOOFING
     ydl_opts = {
         'format': 'bestaudio[ext=m4a]/bestaudio',
         'quiet': True,
         'no_warnings': True,
         'skip_download': True,
+        # Force the extractor to use the Android player client
+        'extractor_args': {
+            'youtube': {
+                'player_client': ['android'],
+                'skip': ['webpage']
+            }
+        },
+        'http_headers': {
+            'User-Agent': 'com.google.android.youtube/19.29.37 (Linux; U; Android 11; en_US) gzip',
+        }
     }
     
     try:
@@ -35,7 +45,7 @@ def get_audio_stream_url(url):
             if info.get('url'):
                 return info.get('url')
     except Exception as e:
-        print(f"yt-dlp native failed: {str(e)}")
+        print(f"yt-dlp android spoofing failed: {str(e)}")
 
     # 2. Fallback to Invidious Proxy
     video_id = ""
@@ -48,7 +58,7 @@ def get_audio_stream_url(url):
     if video_id:
         for instance in INVIDIOUS_INSTANCES:
             try:
-                # Invidious API documentation: https://github.com/iv-org/documentation/blob/master/api.md
+                # Invidious API
                 api_url = f"{instance}/api/v1/videos/{video_id}"
                 resp = requests.get(api_url, timeout=5)
                 if resp.status_code == 200:
@@ -56,7 +66,6 @@ def get_audio_stream_url(url):
                     # Find the best audio format
                     audio_streams = [f for f in data.get('adaptiveFormats', []) if 'audio' in f.get('type', '').lower()]
                     if audio_streams:
-                        # Sort by bitrate descending or just take the first m4a if available
                         audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
                         return audio_streams[0].get('url')
             except Exception as e:

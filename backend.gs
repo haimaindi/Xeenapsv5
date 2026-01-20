@@ -1,9 +1,8 @@
 /**
- * XEENAPS PKM - SECURE BACKEND V31 (YOUTUBE DATA API + WHISPER INTEGRATION)
- * 1. YouTube Data API v3 for official metadata & duration.
- * 2. Hourly Quota: Max 3 YouTube registrations per hour.
- * 3. Max Duration: 30 minutes for Whisper processing.
- * 4. Hierarchy: Official Captions -> Vercel Proxy -> Groq Whisper.
+ * XEENAPS PKM - SECURE BACKEND V32 (YOUTUBE DATA API + ANDROID SPOOFING)
+ * 1. Full Metadata Extraction (Description, Tags, Dates).
+ * 2. Graceful Degradation: Always returns metadata even if transcription fails.
+ * 3. Conditional Whisper: Only runs if stream_url is successfully extracted.
  */
 
 const CONFIG = {
@@ -138,11 +137,13 @@ function checkYoutubeQuota() {
 
 /**
  * GET YOUTUBE METADATA VIA OFFICIAL API
+ * Expanded to fetch description, tags, and published date.
  */
 function getYoutubeVideoInfo(videoId) {
   const response = YouTube.Videos.list('snippet,contentDetails', { id: videoId });
   if (response.items && response.items.length > 0) {
     const item = response.items[0];
+    const snip = item.snippet;
     const durationISO = item.contentDetails.duration;
     
     const match = durationISO.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
@@ -152,10 +153,12 @@ function getYoutubeVideoInfo(videoId) {
     const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
 
     return {
-      title: item.snippet.title,
-      channel: item.snippet.channelTitle,
-      durationSec: totalSeconds,
-      publishedAt: item.snippet.publishedAt
+      title: snip.title,
+      channel: snip.channelTitle,
+      description: snip.description,
+      tags: snip.tags || [],
+      publishedAt: snip.publishedAt,
+      durationSec: totalSeconds
     };
   }
   throw new Error("Video not found via YouTube Data API.");
@@ -172,7 +175,6 @@ function getYoutubeOfficialCaptions(videoId) {
       const text = xml.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
       return text;
     }
-    // Try Indonesian as fallback
     const responseId = UrlFetchApp.fetch(`https://www.youtube.com/api/timedtext?v=${videoId}&lang=id&fmt=srv1`, { muteHttpExceptions: true });
     if (responseId.getResponseCode() === 200 && responseId.getContentText().length > 100) {
       const xml = responseId.getContentText();
@@ -217,7 +219,7 @@ function processGroqWhisper(audioBlob) {
 }
 
 /**
- * HANDLE URL EXTRACTION (WITH HIERARCHY)
+ * HANDLE URL EXTRACTION (GRACEFUL DEGRADATION)
  */
 function handleUrlExtraction(url) {
   const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
@@ -231,35 +233,49 @@ function handleUrlExtraction(url) {
     else { const match = url.match(/v=([^&]+)/); videoId = match ? match[1] : ""; }
     if (!videoId) throw new Error("Invalid YouTube URL.");
 
+    // 1. Mandatory Metadata from YouTube API v3
     const ytInfo = getYoutubeVideoInfo(videoId);
-    if (ytInfo.durationSec > 1800) throw new Error("Video too long (Max 30 mins).");
+    
+    let metadataStr = `YOUTUBE_METADATA:
+Title: ${ytInfo.title}
+Channel: ${ytInfo.channel}
+Published At: ${ytInfo.publishedAt}
+Duration: ${Math.floor(ytInfo.durationSec/60)}m ${ytInfo.durationSec%60}s
+Description: ${ytInfo.description}
+Tags: ${ytInfo.tags.join(", ")}
+`;
 
-    const metadataStr = `YOUTUBE_METADATA:\nTitle: ${ytInfo.title}\nChannel: ${ytInfo.channel}\nDuration: ${Math.floor(ytInfo.durationSec/60)}m ${ytInfo.durationSec%60}s\n`;
-
-    // 1. Try Official Subtitles First
+    // 2. Try Official Subtitles
     const officialSubs = getYoutubeOfficialCaptions(videoId);
     if (officialSubs) return metadataStr + "\nOFFICIAL CAPTIONS CONTENT:\n" + officialSubs;
 
-    // 2. Fallback to Whisper via Vercel Stream (with Invidious Proxy)
-    const vResponse = UrlFetchApp.fetch(CONFIG.PYTHON_API_URL, {
-      method: 'post',
-      contentType: 'application/json',
-      payload: JSON.stringify({ url: url }),
-      muteHttpExceptions: true
-    });
-    
-    const vJson = JSON.parse(vResponse.getContentText());
-    if (vJson.status === 'success' && vJson.stream_url) {
-      const audioRes = UrlFetchApp.fetch(vJson.stream_url);
-      const audioBlob = audioRes.getBlob().setName("temp_" + videoId + ".m4a");
-      const transcript = processGroqWhisper(audioBlob);
-      return metadataStr + "\nWHISPER TRANSCRIPT CONTENT:\n" + transcript;
+    // 3. Fallback to Whisper via Vercel Stream (with Android Spoofing)
+    if (ytInfo.durationSec <= 1800) { // Max 30 mins
+      try {
+        const vResponse = UrlFetchApp.fetch(CONFIG.PYTHON_API_URL, {
+          method: 'post',
+          contentType: 'application/json',
+          payload: JSON.stringify({ url: url }),
+          muteHttpExceptions: true
+        });
+        
+        const vJson = JSON.parse(vResponse.getContentText());
+        if (vJson.status === 'success' && vJson.stream_url) {
+          const audioRes = UrlFetchApp.fetch(vJson.stream_url);
+          const audioBlob = audioRes.getBlob().setName("temp_" + videoId + ".m4a");
+          const transcript = processGroqWhisper(audioBlob);
+          return metadataStr + "\nWHISPER TRANSCRIPT CONTENT:\n" + transcript;
+        }
+      } catch (e) {
+        console.warn("Audio extraction failed, proceeding with metadata only.");
+      }
     }
-    
-    throw new Error("Could not extract captions or audio stream. YouTube might be blocking the request.");
+
+    // 4. Return Metadata Only if all else fails
+    return metadataStr + "\nTRANSCRIPT_UNAVAILABLE: Analyzing based on metadata description and tags provided above.";
   }
 
-  // Non-YouTube Logic (Drive, Web, etc.)
+  // Non-YouTube Logic
   const driveId = getFileIdFromUrl(url);
   if (driveId && (url.includes('drive.google.com') || url.includes('docs.google.com'))) {
     try {

@@ -255,15 +255,23 @@ Tags: ${ytInfo.tags.join(", ")}
           muteHttpExceptions: true
         });
         
-        const vJson = JSON.parse(vResponse.getContentText());
-        if (vJson.status === 'success' && vJson.stream_url) {
-          const audioRes = UrlFetchApp.fetch(vJson.stream_url);
-          const audioBlob = audioRes.getBlob().setName("temp_" + videoId + ".m4a");
-          const transcript = processGroqWhisper(audioBlob);
-          return metadataStr + "\nWHISPER TRANSCRIPT CONTENT:\n" + transcript;
+        // Safety check for Python API response to prevent 'line 1 column 1' error
+        if (vResponse.getResponseCode() === 200) {
+          const contentType = vResponse.getHeaders()['Content-Type'] || '';
+          const responseText = vResponse.getContentText();
+          
+          if (contentType.includes('application/json') && responseText.trim().startsWith('{')) {
+            const vJson = JSON.parse(responseText);
+            if (vJson.status === 'success' && vJson.stream_url) {
+              const audioRes = UrlFetchApp.fetch(vJson.stream_url);
+              const audioBlob = audioRes.getBlob().setName("temp_" + videoId + ".m4a");
+              const transcript = processGroqWhisper(audioBlob);
+              return metadataStr + "\nWHISPER TRANSCRIPT CONTENT:\n" + transcript;
+            }
+          }
         }
       } catch (e) {
-        console.warn("Audio extraction failed, using metadata context for AI analysis.");
+        console.warn("Audio extraction failed, using metadata context for AI analysis: " + e.toString());
       }
     }
 

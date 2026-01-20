@@ -6,77 +6,82 @@ from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# Daftar instance Piped terverifikasi (Update 2024/2025)
-# Kami menggunakan instance yang memiliki reputasi uptime tinggi.
+# Daftar instance Piped yang saat ini paling kompatibel dengan Vercel/Cloud
+# Dipilih yang tidak menggunakan proteksi Cloudflare agresif yang sering 403
 STABLE_INSTANCES = [
     "https://api.piped.privacydev.net",
-    "https://pipedapi.rivo.xyz",
     "https://piped-api.lunar.icu",
-    "https://pipedapi.kavin.rocks",
-    "https://piped-api.us.v9.io",
-    "https://pipedapi.leptons.xyz"
+    "https://piped-api.hostux.net",
+    "https://piped-api.at.v9.io",
+    "https://pipedapi.kavin.rocks"
 ]
 
 def extract_video_id(url):
     """Mengekstrak ID video YouTube."""
     patterns = [
         r'(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/shorts\/)([a-zA-Z0-9_-]{11})',
+        r'youtube\.be\/([a-zA-Z0-9_-]{11})',
         r'youtube\.com\/embed\/([a-zA-Z0-9_-]{11})',
-        r'youtube\.com\/v\/([a-zA-Z0-9_-]{11})',
     ]
     for pattern in patterns:
         match = re.search(pattern, url)
         if match:
             return match.group(1)
-    if len(url) == 11 and re.match(r'^[a-zA-Z0-9_-]+$', url):
+    if len(url) == 11:
         return url
     return None
 
 def get_audio_stream_url(video_id):
-    """Mencoba mendapatkan URL stream audio dengan rotasi instance."""
+    """Mendapatkan URL stream dengan strategi 'Fast Fail' (Max 2 attempts)."""
     if not video_id:
         return None
 
-    # Acak daftar instance agar beban terbagi (load balancing)
     instances = list(STABLE_INSTANCES)
     random.shuffle(instances)
 
+    # Headers yang lebih minimalis terkadang lebih baik menembus bot-detection
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Origin': 'https://piped.video'
+        'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'application/json'
     }
 
-    # Coba maksimal 3 instance berbeda untuk efisiensi waktu Vercel
-    for i in range(min(3, len(instances))):
+    # Kita hanya mencoba 2 instance. 
+    # Vercel limit adalah 10 detik. Jika kita mencoba 3 instance dengan timeout 3s, 
+    # total waktu bisa 9s+ (resiko timeout). 
+    # Dengan 2 instance x 4.5s = 9s, masih ada 1s untuk overhead.
+    max_attempts = 2
+    
+    for i in range(max_attempts):
         instance = instances[i]
         try:
-            print(f"Attempting extraction via: {instance}")
+            print(f"[{i+1}/{max_attempts}] Trying {instance} for ID: {video_id}")
             api_url = f"{instance}/streams/{video_id}"
             
-            # Timeout 3 detik cukup untuk instance yang sehat
-            resp = requests.get(api_url, headers=headers, timeout=3.0)
+            # Timeout 4.5 detik untuk memberi ruang pada server yang agak lambat
+            resp = requests.get(api_url, headers=headers, timeout=4.5)
             
             if resp.status_code == 200:
                 data = resp.json()
                 audio_streams = data.get('audioStreams', [])
                 if audio_streams:
-                    # Ambil bitrate terbaik
+                    # Ambil yang bitrate paling stabil (biasanya m4a/128kbps)
                     audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
-                    print(f"Success! Found stream at {instance}")
+                    print(f"Found! Stream URL extracted from {instance}")
                     return audio_streams[0].get('url')
             else:
-                print(f"Instance {instance} returned status code: {resp.status_code}")
+                print(f"Failed: {instance} responded with {resp.status_code}")
                 
+        except requests.exceptions.Timeout:
+            print(f"Timeout: {instance} took too long (> 4.5s)")
         except requests.exceptions.RequestException as e:
-            print(f"Instance {instance} failed: {type(e).__name__}")
-            continue
-
+            print(f"Error: {instance} unreachable ({type(e).__name__})")
+            
     return None
 
 @app.route('/api/extract', methods=['POST'])
 def extract():
     try:
+        # Pengecekan JSON dasar
         if not request.is_json:
             return jsonify({"status": "error", "message": "JSON required"}), 400
             
@@ -96,14 +101,16 @@ def extract():
                 "stream_url": stream_url
             })
         
+        # 503 jika semua percobaan gagal agar user tahu ini masalah eksternal
         return jsonify({
             "status": "error", 
-            "message": "Audio source unreachable. All active Piped nodes are failing or rate-limiting our request."
+            "message": "All Piped nodes failed. YouTube is likely blocking extraction from this region."
         }), 503
         
     except Exception as e:
-        print(f"CRITICAL ERROR: {str(e)}")
-        return jsonify({"status": "error", "message": "Internal server crash"}), 500
+        print(f"FATAL ERROR: {str(e)}")
+        return jsonify({"status": "error", "message": "System error during extraction"}), 500
 
 if __name__ == '__main__':
+    # Flask lokal (Vercel menggunakan handler otomatis)
     app.run(port=5000)

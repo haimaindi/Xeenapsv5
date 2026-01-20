@@ -1,26 +1,13 @@
 import re
-import os
-import random
 import requests
 from flask import Flask, request, jsonify
 
 app = Flask(__name__)
 
-# ⚡ VERIFIED WORKING INSTANCES (Update Jan 2026) ⚡
-# These instances are currently stable and proxy YouTube streams effectively.
-WORKING_INSTANCES = [
-    "https://pipedapi.kavin.rocks",
-    "https://pa.il.ax",
-    "https://piped-api.garudalinux.org",
-    "https://watchapi.whatever.social",
-]
-
-# 🛡️ INVIDIOUS FALLBACKS
-FALLBACK_INSTANCES = [
-    "https://inv.vern.cc",
-    "https://invidious.nerdvpn.de",
-    "https://yewtu.be"
-]
+# ⚡ SPECIFIC PIPED INSTANCES (As requested) ⚡
+# Piped 1 (Primary) and Piped 2 (Backup)
+PIPED_1 = "https://pipedapi.kavin.rocks"
+PIPED_2 = "https://pa.il.ax"
 
 def extract_video_id(url):
     """Extract video ID from various YouTube URL formats."""
@@ -36,46 +23,33 @@ def extract_video_id(url):
     return url if len(url) == 11 else None
 
 def get_audio_stream_url(video_id):
-    """Attempt to get an audio stream URL using a fast rotation of Piped/Invidious instances."""
+    """Attempt to get an audio stream URL using only Piped 1 and Piped 2."""
     if not video_id:
         return None
 
-    # Enhanced headers to mimic a valid client and bypass simple blocks
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'application/json',
-        'Referer': 'https://piped.video/'
+        'Accept': 'application/json'
     }
 
-    # 1. Primary: Piped API Rotation (2.5s timeout per attempt)
-    # Trying up to 3 instances to stay under Vercel's 10s limit
-    sampled_piped = random.sample(WORKING_INSTANCES, min(3, len(WORKING_INSTANCES)))
-    for instance in sampled_piped:
-        try:
-            api_url = f"{instance}/streams/{video_id}"
-            resp = requests.get(api_url, headers=headers, timeout=2.5)
-            
-            if resp.status_code == 200:
-                data = resp.json()
-                audio_streams = data.get('audioStreams', [])
-                if audio_streams:
-                    # Prefer standard bitrates (around 128kbps) for efficiency
-                    audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
-                    stream_url = audio_streams[0].get('url')
-                    if stream_url:
-                        return stream_url
-        except Exception:
-            continue
-
-    # 2. Secondary: Invidious Fallback (2s timeout)
-    instance = random.choice(FALLBACK_INSTANCES)
+    # 1. TRY PIPED 1 (4.0s timeout)
     try:
-        api_url = f"{instance}/api/v1/videos/{video_id}"
-        resp = requests.get(api_url, headers=headers, timeout=2)
+        resp = requests.get(f"{PIPED_1}/streams/{video_id}", headers=headers, timeout=4.0)
         if resp.status_code == 200:
             data = resp.json()
-            adaptive_formats = data.get('adaptiveFormats', [])
-            audio_streams = [f for f in adaptive_formats if 'audio' in f.get('type', '').lower()]
+            audio_streams = data.get('audioStreams', [])
+            if audio_streams:
+                audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
+                return audio_streams[0].get('url')
+    except Exception:
+        pass
+
+    # 2. TRY PIPED 2 (4.0s timeout)
+    try:
+        resp = requests.get(f"{PIPED_2}/streams/{video_id}", headers=headers, timeout=4.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            audio_streams = data.get('audioStreams', [])
             if audio_streams:
                 audio_streams.sort(key=lambda x: x.get('bitrate', 0), reverse=True)
                 return audio_streams[0].get('url')
@@ -88,13 +62,13 @@ def get_audio_stream_url(video_id):
 def extract():
     try:
         if not request.is_json:
-            return jsonify({"status": "error", "message": "Content-Type must be application/json"}), 400
+            return jsonify({"status": "error", "message": "JSON required"}), 400
             
         data = request.get_json()
         url = data.get('url')
         
         if not url:
-            return jsonify({"status": "error", "message": "URL is required"}), 400
+            return jsonify({"status": "error", "message": "URL missing"}), 400
             
         video_id = extract_video_id(url)
         if video_id:
@@ -102,13 +76,12 @@ def extract():
             if stream_url:
                 return jsonify({
                     "status": "success",
-                    "stream_url": stream_url,
-                    "video_id": video_id
+                    "stream_url": stream_url
                 })
             else:
-                return jsonify({"status": "error", "message": "Could not find a working audio stream within timeout."}), 500
+                return jsonify({"status": "error", "message": "Audio stream not found on Piped 1 or 2."}), 404
         
-        return jsonify({"status": "error", "message": "Invalid or unsupported YouTube URL."}), 400
+        return jsonify({"status": "error", "message": "Invalid YouTube URL."}), 400
         
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500

@@ -61,10 +61,10 @@ const processExtractedText = (extractedText: string, defaultTitle: string = ""):
   const limitTotal = 200000;
   const limitedText = extractedText.substring(0, limitTotal);
   const aiSnippet = limitedText.substring(0, 7500);
-  const chunkSize = 20000;
+  const chunkSize = 40000;
   const chunks: string[] = [];
   for (let i = 0; i < limitedText.length; i += chunkSize) {
-    if (chunks.length >= 10) break;
+    if (chunks.length >= 5) break;
     chunks.push(limitedText.substring(i, i + chunkSize));
   }
   return { title: defaultTitle, fullText: limitedText, aiSnippet, chunks } as ExtractionResult;

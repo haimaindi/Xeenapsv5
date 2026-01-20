@@ -1,4 +1,3 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 // @ts-ignore
 import { useNavigate } from 'react-router-dom';
@@ -169,7 +168,21 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       const b64 = await new Promise<string>(r => { reader.onload = () => r((reader.result as string).split(',')[1]); reader.readAsDataURL(file); });
       fileUploadData = { fileName: file.name, mimeType: file.type, fileData: b64 };
     }
-    const newItem: any = { ...formData, id: crypto.randomUUID(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), source: formData.addMethod === 'LINK' ? SourceType.LINK : SourceType.FILE, format: formData.addMethod === 'LINK' ? FileFormat.URL : detectedFormat, author: formData.authors.join(', '), tags: [...formData.keywords, ...formData.labels], extractedInfo1: formData.chunks[0] || '', extractedInfo2: formData.chunks[1] || '' };
+    const newItem: any = { 
+      ...formData, 
+      id: crypto.randomUUID(), 
+      createdAt: new Date().toISOString(), 
+      updatedAt: new Date().toISOString(), 
+      source: formData.addMethod === 'LINK' ? SourceType.LINK : SourceType.FILE, 
+      format: formData.addMethod === 'LINK' ? FileFormat.URL : detectedFormat, 
+      author: formData.authors.join(', '), 
+      tags: [...formData.keywords, ...formData.labels], 
+      extractedInfo1: formData.chunks[0] || '', 
+      extractedInfo2: formData.chunks[1] || '',
+      extractedInfo3: formData.chunks[2] || '',
+      extractedInfo4: formData.chunks[3] || '',
+      extractedInfo5: formData.chunks[4] || ''
+    };
     const success = await saveLibraryItem(newItem, fileUploadData);
     if (success) { onComplete(); navigate('/'); }
     setIsSubmitting(false);

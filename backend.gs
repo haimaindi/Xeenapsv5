@@ -1,8 +1,8 @@
 /**
- * XEENAPS PKM - SECURE BACKEND V32 (YOUTUBE DATA API + ANDROID SPOOFING)
- * 1. Full Metadata Extraction (Description, Tags, Dates).
- * 2. Graceful Degradation: Always returns metadata even if transcription fails.
- * 3. Conditional Whisper: Only runs if stream_url is successfully extracted.
+ * XEENAPS PKM - SECURE BACKEND V33 (PIPED API + ENHANCED METADATA)
+ * 1. Full Metadata Extraction (Description, Tags, Dates) via YouTube Data API v3.
+ * 2. Graceful Degradation: Returns metadata for AI analysis even if audio extraction/whisper fails.
+ * 3. Conditional Whisper: Only triggered if Python API returns a valid stream URL.
  */
 
 const CONFIG = {
@@ -106,9 +106,6 @@ function doPost(e) {
   }
 }
 
-/**
- * HOURLY QUOTA CHECK
- */
 function checkYoutubeQuota() {
   const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.LIBRARY);
   const sheet = ss.getSheetByName("Collections");
@@ -137,7 +134,6 @@ function checkYoutubeQuota() {
 
 /**
  * GET YOUTUBE METADATA VIA OFFICIAL API
- * Expanded to fetch description, tags, and published date.
  */
 function getYoutubeVideoInfo(videoId) {
   const response = YouTube.Videos.list('snippet,contentDetails', { id: videoId });
@@ -165,7 +161,7 @@ function getYoutubeVideoInfo(videoId) {
 }
 
 /**
- * GET OFFICIAL SUBTITLES VIA YOUTUBE API (TIMEDTEXT)
+ * GET OFFICIAL SUBTITLES VIA YOUTUBE API
  */
 function getYoutubeOfficialCaptions(videoId) {
   try {
@@ -219,7 +215,7 @@ function processGroqWhisper(audioBlob) {
 }
 
 /**
- * HANDLE URL EXTRACTION (GRACEFUL DEGRADATION)
+ * HANDLE URL EXTRACTION (WITH GRACEFUL FALLBACK TO METADATA)
  */
 function handleUrlExtraction(url) {
   const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
@@ -233,7 +229,7 @@ function handleUrlExtraction(url) {
     else { const match = url.match(/v=([^&]+)/); videoId = match ? match[1] : ""; }
     if (!videoId) throw new Error("Invalid YouTube URL.");
 
-    // 1. Mandatory Metadata from YouTube API v3
+    // 1. Mandatory Full Metadata from YouTube API v3
     const ytInfo = getYoutubeVideoInfo(videoId);
     
     let metadataStr = `YOUTUBE_METADATA:
@@ -249,7 +245,7 @@ Tags: ${ytInfo.tags.join(", ")}
     const officialSubs = getYoutubeOfficialCaptions(videoId);
     if (officialSubs) return metadataStr + "\nOFFICIAL CAPTIONS CONTENT:\n" + officialSubs;
 
-    // 3. Fallback to Whisper via Vercel Stream (with Android Spoofing)
+    // 3. Fallback to Whisper via Piped/Invidious Vercel API
     if (ytInfo.durationSec <= 1800) { // Max 30 mins
       try {
         const vResponse = UrlFetchApp.fetch(CONFIG.PYTHON_API_URL, {
@@ -267,15 +263,15 @@ Tags: ${ytInfo.tags.join(", ")}
           return metadataStr + "\nWHISPER TRANSCRIPT CONTENT:\n" + transcript;
         }
       } catch (e) {
-        console.warn("Audio extraction failed, proceeding with metadata only.");
+        console.warn("Audio extraction failed, using metadata context for AI analysis.");
       }
     }
 
-    // 4. Return Metadata Only if all else fails
-    return metadataStr + "\nTRANSCRIPT_UNAVAILABLE: Analyzing based on metadata description and tags provided above.";
+    // 4. Return Full Metadata Only (Graceful Degradation)
+    return metadataStr + "\nTRANSCRIPT_UNAVAILABLE: Please analyze item based on the description and metadata provided above.";
   }
 
-  // Non-YouTube Logic
+  // Non-YouTube Logic (Drive/Web)
   const driveId = getFileIdFromUrl(url);
   if (driveId && (url.includes('drive.google.com') || url.includes('docs.google.com'))) {
     try {
@@ -290,7 +286,6 @@ Tags: ${ytInfo.tags.join(", ")}
     } catch (e) {}
   }
 
-  let nativeContent = "";
   try {
     const response = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
     if (response.getResponseCode() === 200) {

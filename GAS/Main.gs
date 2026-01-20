@@ -29,7 +29,7 @@ function doPost(e) {
     if (action === 'saveItem') {
       const item = body.item;
       
-      // 1. Handle File Upload Logic (including ImageView)
+      // 1. Handle File Upload Logic (including ImageView for Images)
       if (body.file && body.file.fileData) {
         const folder = DriveApp.getFolderById(CONFIG.FOLDERS.MAIN_LIBRARY);
         const mimeType = body.file.mimeType || 'application/octet-stream';
@@ -38,13 +38,13 @@ function doPost(e) {
         const fileId = file.getId();
         item.fileId = fileId;
         
-        // If file is an image, generate ImageView URL
+        // AUTO IMAGE VIEW: If image, set the direct link
         if (mimeType.toLowerCase().includes('image/')) {
           item.imageView = 'https://lh3.googleusercontent.com/d/' + fileId;
         }
       }
 
-      // 2. Handle YouTube ID Logic (ID Youtube column)
+      // 2. Handle YouTube ID Logic
       if (item.url && (item.url.includes('youtube.com') || item.url.includes('youtu.be'))) {
         const ytid = extractYoutubeId(item.url);
         if (ytid) {
@@ -75,10 +75,15 @@ function doPost(e) {
         extractedText = "Extraction failed: " + err.toString();
       }
 
+      // SMART DOI DETECTION for frontend workflow
+      const doiPattern = /10\.\d{4,9}\/[-._;()/:A-Z0-9]+/i;
+      const doiMatch = extractedText.match(doiPattern);
+
       return createJsonResponse({ 
         status: 'success', 
         extractedText: extractedText,
-        fileName: fileName
+        fileName: fileName,
+        detectedDoi: doiMatch ? doiMatch[0] : null
       });
     }
 

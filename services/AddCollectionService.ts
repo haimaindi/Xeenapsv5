@@ -3,79 +3,54 @@ import { callAiProxy } from "./gasService";
 
 /**
  * AddCollectionService - Metadata Extraction via AI Proxy (GROQ).
- * FOCUS: Basic metadata, robust citations, DOI, keywords, and labels.
+ * FOCUS: Gap-filling, robust formatting, and protective data handling.
  */
-export const extractMetadataWithAI = async (textSnippet: string): Promise<Partial<LibraryItem>> => {
+export const extractMetadataWithAI = async (textSnippet: string, existingData: Partial<LibraryItem> = {}): Promise<Partial<LibraryItem>> => {
   try {
     const truncatedSnippet = textSnippet.substring(0, 7500);
 
-    const prompt = `ACT AS AN EXPERT SENIOR ACADEMIC LIBRARIAN. 
-    EXTRACT DATA FROM THE PROVIDED TEXT AND RETURN IN RAW JSON FORMAT ONLY.
+    const prompt = `ACT AS AN EXPERT SENIOR ACADEMIC LIBRARIAN (XEENAPS AI LIBRARIAN). 
+    ENRICH THE PROVIDED METADATA USING THE TEXT SNIPPET BELOW.
 
-    --- SPECIAL LOGIC FOR YOUTUBE VIDEOS (WHISPER TRANSCRIPTS) ---
-    IF the text snippet contains "YOUTUBE_METADATA:" or appears to be a video transcript:
-    - "category": MUST be exactly "Video".
-    - "publisher": MUST be exactly "YouTube".
-    - "authors": Use the "Channel" name as the only item in the array.
-    - "title": Use the "Title" found in the metadata section.
-    - "year": Guess the year from the content or transcript context if not found.
-    - "doi": EMPTY STRING.
-    - "inTextAPA", "inTextHarvard", "inTextChicago", "bibAPA", "bibHarvard", "bibChicago": MUST BE EMPTY STRINGS.
-    - ANALYZE the first few paragraphs of the transcript to determine the precise Topic and Subtopic.
-    ----------------------------------------------------------
+    --- MANDATORY WORKFLOW ---
+    1. GAP-FILLING ONLY: Fill ONLY fields that are empty or "N/A" in the "EXISTING_DATA" section.
+    2. DATA PROTECTION: DO NOT OVERWRITE any valid metadata provided in "EXISTING_DATA". 
+    3. NO HALLUCINATION: If identifiers (DOI, ISBN, ISSN, PMID, Bibcode, ArXiv) are NOT explicitly found in the text, leave them empty. DO NOT guess or hallucinate these values.
+    4. ABSTRACT CLEANING & FORMATTING:
+       - Keep original language (DO NOT TRANSLATE).
+       - Remove all special characters like '*', '#', or double asterisks.
+       - If sub-headers (e.g., Introduction, Methods, Results, Conclusion) are present, format them as: <b>Header Name:</b> followed by a line break.
+       - Ensure a clean, readable flow.
+    5. THEMATIC ANALYSIS: Determine Category, Topic, and SubTopic accurately.
+    --------------------------
 
-    --- CRITICAL INSTRUCTION FOR DOI ---
-    - SEARCH for the PRIMARY DOI of the document (usually found in headers or first page).
-    - Pattern: 10.xxxx/xxxxx
-    - IMPORTANT: IGNORE any DOIs found in the "Reference", "Bibliography", or "Literature Cited" sections at the end of the text.
-    ------------------------------------
-
-    SCOPE LIMITATION (CRITICAL):
-    - ANALYZE ONLY: title, topic, subTopic, authors, publisher, year, doi, keywords, labels, and citation fields.
-    - DO NOT analyze: researchMethodology, abstract, summary, etc.
-
-    CRITICAL INSTRUCTION FOR ROBUSTNESS:
-    1. COMPLETE FIELDS (NO TRUNCATION):
-       - "title": Full official title.
-       - "authors": Array of full names (For videos, this is the Channel Name).
-       - "publisher": Journal name or "YouTube".
-       - "year": YYYY format.
-       - "doi": Primary DOI only.
-       - "bibAPA", "bibHarvard", "bibChicago": Full bibliographic entries (Keep Empty for Videos).
-    
-    2. CONCISE FIELDS:
-       - "topic": Exactly 2 words.
-       - "subTopic": Exactly 2 words.
-       - "keywords": Exactly 5 relevant academic keywords.
-       - "labels": Exactly 3 thematic labels.
-
-    3. STYLE COMPLIANCE (NON-VIDEO): 
-       - inTextAPA: (Author, Year)
-       - inTextHarvard: (Author, Year)
-       - inTextChicago: (Author Year)
-
-    EXPECTED JSON SCHEMA:
-    {
-      "title": "Full Title",
-      "authors": ["Name"],
-      "year": "YYYY",
-      "publisher": "Name",
-      "doi": "Primary DOI",
-      "category": "Video or Original Research",
-      "topic": "Two Words",
-      "subTopic": "Two Words",
-      "keywords": ["k1", "k2", "k3", "k4", "k5"],
-      "labels": ["l1", "l2", "l3"],
-      "inTextAPA": "...",
-      "inTextHarvard": "...",
-      "inTextChicago": "...",
-      "bibAPA": "...",
-      "bibHarvard": "...",
-      "bibChicago": "..."
-    }
+    EXISTING_DATA:
+    ${JSON.stringify(existingData)}
 
     TEXT SNIPPET:
-    ${truncatedSnippet}`;
+    ${truncatedSnippet}
+
+    EXPECTED JSON OUTPUT (RAW JSON ONLY):
+    {
+      "title": "Full Official Title",
+      "authors": ["Array of names"],
+      "year": "YYYY",
+      "publisher": "Name",
+      "doi": "Only if explicit in snippet",
+      "isbn": "Only if explicit in snippet",
+      "issn": "Only if explicit in snippet",
+      "pmid": "Only if explicit in snippet",
+      "arxivId": "Only if explicit in snippet",
+      "bibcode": "Only if explicit in snippet",
+      "category": "e.g., Original Research",
+      "topic": "Exactly 2 words",
+      "subTopic": "Exactly 2 words",
+      "abstract": "Cleaned and formatted abstract",
+      "keywords": ["5 key terms"],
+      "labels": ["3 thematic labels"],
+      "inTextAPA": "Citation format",
+      "bibAPA": "Full bibliographic entry"
+    }`;
 
     const response = await callAiProxy('groq', prompt);
     if (!response) return {};
@@ -89,7 +64,17 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
 
     try {
       const parsed = JSON.parse(cleanJson);
-      return Object.fromEntries(Object.entries(parsed).filter(([_, v]) => v != null && v !== ""));
+      
+      // Merge logic: AI only fills what is missing in existingData
+      const merged = { ...parsed };
+      Object.keys(existingData).forEach(key => {
+        const val = (existingData as any)[key];
+        if (val && val !== "" && val !== "N/A" && (!Array.isArray(val) || val.length > 0)) {
+          merged[key] = val;
+        }
+      });
+
+      return merged;
     } catch (e) {
       console.error('JSON Parse Error:', e);
       return {};

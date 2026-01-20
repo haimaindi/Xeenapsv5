@@ -117,6 +117,22 @@ function mergeMetadata(sourceA, sourceB) {
 }
 
 /**
+ * OpenAlex Inverted Index Abstract Decoder
+ */
+function decodeOpenAlexAbstract(index) {
+  if (!index) return "";
+  try {
+    const words = [];
+    Object.keys(index).forEach(word => {
+      index[word].forEach(pos => {
+        words[pos] = word;
+      });
+    });
+    return words.join(" ").trim();
+  } catch (e) { return ""; }
+}
+
+/**
  * OPENALEX SEARCH BY TITLE
  */
 function searchOpenAlexByTitle(title) {
@@ -138,7 +154,8 @@ function searchOpenAlexByTitle(title) {
         journalName: item.primary_location?.source?.display_name || "",
         year: item.publication_year ? item.publication_year.toString() : "",
         fullDate: standardizeFullDate(item.publication_date),
-        doi: item.doi ? item.doi.replace('https://doi.org/', '') : ""
+        doi: item.doi ? item.doi.replace('https://doi.org/', '') : "",
+        abstract: decodeOpenAlexAbstract(item.abstract_inverted_index)
       }
     };
   } catch (e) { return { status: 'error' }; }
@@ -167,7 +184,8 @@ function fetchOpenAlexMetadata(doi) {
         issue: item.biblio?.issue || "",
         pages: (item.biblio?.first_page && item.biblio?.last_page) ? `${item.biblio.first_page}-${item.biblio.last_page}` : (item.biblio?.first_page || ""),
         doi: doi,
-        issn: (item.primary_location?.source?.issn && item.primary_location.source.issn[0]) || ""
+        issn: (item.primary_location?.source?.issn && item.primary_location.source.issn[0]) || "",
+        abstract: decodeOpenAlexAbstract(item.abstract_inverted_index)
       }
     };
   } catch (e) { return { status: 'error' }; }
@@ -236,7 +254,8 @@ function parseCrossrefItem(item, doi) {
       pages: item.page || "",
       doi: item.DOI || doi || "",
       issn: (item.ISSN && item.ISSN[0]) || "",
-      isbn: (item.ISBN && item.ISBN[0]) || ""
+      isbn: (item.ISBN && item.ISBN[0]) || "",
+      abstract: item.abstract ? item.abstract.replace(/<[^>]*>/g, "").trim() : ""
     }
   };
 }
@@ -341,6 +360,7 @@ function fetchArxivMetadata(id) {
     const title = xml.match(/<title>([\s\S]*?)<\/title>/)?.[1].replace(/\s+/g, ' ').trim() || "";
     const authors = [...xml.matchAll(/<name>([\s\S]*?)<\/name>/g)].map(m => m[1]);
     const pubTag = xml.match(/<published>([\s\S]*?)<\/published>/)?.[1] || "";
+    const abstract = xml.match(/<summary>([\s\S]*?)<\/summary>/)?.[1].replace(/\s+/g, ' ').trim() || "";
     
     return {
       status: 'success',
@@ -351,7 +371,8 @@ function fetchArxivMetadata(id) {
         year: pubTag ? pubTag.substring(0, 4) : "",
         fullDate: standardizeFullDate(pubTag),
         arxivId: id,
-        doi: xml.match(/<arxiv:doi[^>]*>([\s\S]*?)<\/arxiv:doi>/)?.[1] || ""
+        doi: xml.match(/<arxiv:doi[^>]*>([\s\S]*?)<\/arxiv:doi>/)?.[1] || "",
+        abstract: abstract
       }
     };
   } catch (e) { return { status: 'error' }; }

@@ -2,9 +2,10 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 // @ts-ignore
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
-import { SourceType, FileFormat, LibraryItem, LibraryType } from '../../types';
+import { SourceType, FileFormat, LibraryItem, LibraryType, ExtractionResult } from '../../types';
 import { saveLibraryItem, uploadAndStoreFile, extractFromUrl, callIdentifierSearch } from '../../services/gasService';
 import { extractMetadataWithAI } from '../../services/AddCollectionService';
+import { GAS_WEB_APP_URL } from '../../constants';
 import { 
   CheckIcon, 
   LinkIcon, 
@@ -57,6 +58,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     pmid: '',
     arxivId: '',
     bibcode: '',
+    abstract: '',
     keywords: [] as string[],
     labels: [] as string[],
     url: '',
@@ -79,9 +81,39 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     allLabels: Array.from(new Set(items.flatMap(i => i.labels || []).filter(Boolean))),
   }), [items]);
 
-  // Handle Mode Change
   const setMode = (mode: 'FILE' | 'LINK' | 'REF') => {
     setFormData(prev => ({ ...prev, addMethod: mode }));
+  };
+
+  // MULTI-STAGE ANALYSIS CHAIN
+  const runExtractionWorkflow = async (extractedText: string, chunks: string[], detectedDoi?: string) => {
+    // Correct destructuring to avoid passing chunks to LibraryItem partial
+    const { chunks: _c, ...formDataWithoutChunks } = formData;
+    let baseData: Partial<LibraryItem> = formDataWithoutChunks;
+
+    // Stage 1: Official Identifier Search (If DOI found in text)
+    if (detectedDoi) {
+      setExtractionStage('FETCHING_ID');
+      try {
+        const officialData = await callIdentifierSearch(detectedDoi);
+        if (officialData) {
+          baseData = { ...baseData, ...officialData };
+          setFormData(prev => ({ ...prev, ...officialData }));
+        }
+      } catch (e) {}
+    }
+
+    // Stage 2: AI Enrichment (Filling the gaps)
+    setExtractionStage('AI_ANALYSIS');
+    const aiEnriched = await extractMetadataWithAI(extractedText, baseData);
+    setFormData(prev => ({
+      ...prev,
+      ...aiEnriched,
+      authors: (aiEnriched.authors && aiEnriched.authors.length > 0) ? aiEnriched.authors : prev.authors,
+      keywords: (aiEnriched.keywords && aiEnriched.keywords.length > 0) ? aiEnriched.keywords : prev.keywords,
+      labels: (aiEnriched.labels && aiEnriched.labels.length > 0) ? aiEnriched.labels : prev.labels,
+      chunks: chunks
+    }));
   };
 
   // Logic for LINK mode
@@ -90,42 +122,18 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       const url = formData.url.trim();
       if (url && url.startsWith('http') && url !== lastExtractedUrl.current && formData.addMethod === 'LINK') {
         lastExtractedUrl.current = url;
-        
-        const doiPattern = /10\.\d{4,9}\/[-._;()/:A-Z0-9]+/i;
-        const doiMatch = url.match(doiPattern);
-        if (doiMatch) {
-          setFormData(prev => ({ ...prev, doi: doiMatch[0] }));
-        }
-
         setExtractionStage('READING');
         try {
-          const result = await extractFromUrl(url, (stage) => setExtractionStage(stage));
-          if (result) {
-            setExtractionStage('AI_ANALYSIS');
-            const aiMeta = await extractMetadataWithAI(result.aiSnippet || result.fullText || "");
-            setFormData(prev => ({
-              ...prev,
-              title: aiMeta.title || result.title || prev.title,
-              year: aiMeta.year || result.year || prev.year,
-              publisher: aiMeta.publisher || result.publisher || prev.publisher,
-              doi: aiMeta.doi || prev.doi,
-              authors: (aiMeta.authors && aiMeta.authors.length > 0) ? aiMeta.authors : (result.authors || prev.authors),
-              keywords: (aiMeta.keywords && aiMeta.keywords.length > 0) ? aiMeta.keywords : (result.keywords || prev.keywords),
-              labels: (aiMeta.labels && aiMeta.labels.length > 0) ? aiMeta.labels : prev.labels,
-              type: (aiMeta.type as LibraryType) || (result.type as LibraryType) || prev.type,
-              category: aiMeta.category || result.category || prev.category,
-              topic: aiMeta.topic || prev.topic,
-              subTopic: aiMeta.subTopic || prev.subTopic,
-              chunks: result.chunks || []
-            }));
+          const res = await fetch(GAS_WEB_APP_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'extractOnly', url }),
+          });
+          const data = await res.json();
+          if (data.status === 'success') {
+            await runExtractionWorkflow(data.extractedText, [data.extractedText.substring(0, 20000)], data.detectedDoi);
           }
         } catch (err: any) {
-          showXeenapsAlert({ 
-            icon: 'warning', 
-            title: 'EXTRACTION FAILED', 
-            text: 'This link can not be extracted automatically.', 
-            confirmButtonText: 'I UNDERSTAND' 
-          });
+          showXeenapsAlert({ icon: 'warning', title: 'EXTRACTION FAILED', text: 'This link can not be extracted automatically.' });
         } finally {
           setExtractionStage('IDLE');
         }
@@ -145,18 +153,26 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         try {
           const data = await callIdentifierSearch(idVal);
           if (data) {
-            setFormData(prev => ({
-              ...prev,
-              ...data,
-              authors: Array.isArray(data.authors) ? data.authors : prev.authors,
-            }));
+            setFormData(prev => ({ ...prev, ...data }));
+            
+            if (data.url && data.url.startsWith('http')) {
+              setExtractionStage('READING');
+              const scrapeRes = await fetch(GAS_WEB_APP_URL, {
+                method: 'POST',
+                body: JSON.stringify({ action: 'extractOnly', url: data.url }),
+              });
+              const scrapeData = await scrapeRes.json();
+              if (scrapeData.status === 'success') {
+                await runExtractionWorkflow(scrapeData.extractedText, [scrapeData.extractedText.substring(0, 20000)]);
+              }
+            } else {
+              setExtractionStage('AI_ANALYSIS');
+              const simpleEnrich = await extractMetadataWithAI("", data);
+              setFormData(prev => ({ ...prev, ...simpleEnrich }));
+            }
           }
         } catch (e: any) {
-          showXeenapsAlert({ 
-            icon: 'error', 
-            title: 'SEARCH FAILED', 
-            text: 'No Data Found, please give right identifier' 
-          });
+          showXeenapsAlert({ icon: 'error', title: 'SEARCH FAILED', text: 'No Data Found, please give right identifier' });
         } finally {
           setExtractionStage('IDLE');
         }
@@ -172,25 +188,19 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       setFile(selectedFile);
       setExtractionStage('READING');
       try {
-        const result = await uploadAndStoreFile(selectedFile);
-        if (result) {
-          setExtractionStage('AI_ANALYSIS');
-          const aiMeta = await extractMetadataWithAI(result.aiSnippet || result.fullText || "");
-          setFormData(prev => ({
-            ...prev,
-            title: aiMeta.title || result.title || prev.title,
-            authors: (aiMeta.authors && aiMeta.authors.length > 0) ? aiMeta.authors : (result.authors || prev.authors),
-            publisher: aiMeta.publisher || result.publisher || prev.publisher,
-            year: aiMeta.year || result.year || prev.year,
-            doi: aiMeta.doi || prev.doi,
-            keywords: (aiMeta.keywords && aiMeta.keywords.length > 0) ? aiMeta.keywords : (result.keywords || prev.keywords),
-            labels: (aiMeta.labels && aiMeta.labels.length > 0) ? aiMeta.labels : prev.labels,
-            type: (aiMeta.type as LibraryType) || (result.type as LibraryType) || prev.type,
-            category: aiMeta.category || result.category || prev.category,
-            topic: aiMeta.topic || prev.topic,
-            subTopic: aiMeta.subTopic || prev.subTopic,
-            chunks: result.chunks || []
-          }));
+        const reader = new FileReader();
+        const base64Data = await new Promise<string>((resolve) => {
+          reader.onload = () => resolve((reader.result as string).split(',')[1]);
+          reader.readAsDataURL(selectedFile);
+        });
+
+        const response = await fetch(GAS_WEB_APP_URL, { 
+          method: 'POST', 
+          body: JSON.stringify({ action: 'extractOnly', fileData: base64Data, fileName: selectedFile.name, mimeType: selectedFile.type }) 
+        });
+        const result = await response.json();
+        if (result.status === 'success') {
+          await runExtractionWorkflow(result.extractedText, [result.extractedText.substring(0, 20000)], result.detectedDoi);
         }
       } catch (err: any) {
         showXeenapsAlert({ icon: 'warning', title: 'File Error', text: err.message || 'Extraction failed.' });
@@ -217,16 +227,14 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       let fileUploadData = undefined;
       if (file) {
         const ext = file.name.split('.').pop()?.toLowerCase();
-        const formatMap: any = { 'pptx': FileFormat.PPTX, 'docx': FileFormat.DOCX, 'xlsx': FileFormat.XLSX };
+        const formatMap: any = { 'pptx': FileFormat.PPTX, 'docx': FileFormat.DOCX, 'xlsx': FileFormat.XLSX, 'png': FileFormat.URL, 'jpg': FileFormat.URL, 'jpeg': FileFormat.URL };
         detectedFormat = formatMap[ext || ''] || FileFormat.PDF;
         const reader = new FileReader();
         const b64 = await new Promise<string>(r => { reader.onload = () => r((reader.result as string).split(',')[1]); reader.readAsDataURL(file); });
         fileUploadData = { fileName: file.name, mimeType: file.type, fileData: b64 };
       }
       
-      const generatedId = typeof crypto !== 'undefined' && crypto.randomUUID 
-        ? crypto.randomUUID() 
-        : (Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+      const generatedId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
 
       const newItem: any = { 
         ...formData, 
@@ -237,16 +245,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         format: formData.addMethod === 'LINK' ? FileFormat.URL : detectedFormat, 
         author: formData.authors.join(', '), 
         tags: [...formData.keywords, ...formData.labels], 
-        extractedInfo1: formData.chunks[0] || '', 
-        extractedInfo2: formData.chunks[1] || '',
-        extractedInfo3: formData.chunks[2] || '',
-        extractedInfo4: formData.chunks[3] || '',
-        extractedInfo5: formData.chunks[4] || '',
-        extractedInfo6: formData.chunks[5] || '',
-        extractedInfo7: formData.chunks[6] || '',
-        extractedInfo8: formData.chunks[7] || '',
-        extractedInfo9: formData.chunks[8] || '',
-        extractedInfo10: formData.chunks[9] || ''
+        extractedInfo1: formData.chunks[0] || ''
       };
       const success = await saveLibraryItem(newItem, fileUploadData);
       Swal.close();
@@ -261,10 +260,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
 
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = e.target.value; 
-    if (!val) {
-      setFormData(prev => ({ ...prev, fullDate: '' }));
-      return;
-    }
+    if (!val) { setFormData(prev => ({ ...prev, fullDate: '' })); return; }
     const d = new Date(val);
     const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
     const formatted = `${d.getDate().toString().padStart(2, '0')} ${months[d.getMonth()]} ${d.getFullYear()}`;
@@ -295,9 +291,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     <FormPageContainer>
       <FormStickyHeader title="Add Collection" subtitle="Expand your digital library" onBack={() => navigate('/')} rightElement={
         <div className="flex bg-gray-100/50 p-1.5 rounded-2xl gap-1 w-full md:w-auto">
-          <button type="button" onClick={() => setMode('FILE')} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'FILE' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74] disabled:opacity-50'}`}><DocumentIcon className="w-4 h-4" /> FILE</button>
-          <button type="button" onClick={() => setMode('LINK')} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'LINK' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74] disabled:opacity-50'}`}><LinkIcon className="w-4 h-4" /> LINK</button>
-          <button type="button" onClick={() => setMode('REF')} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'REF' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74] disabled:opacity-50'}`}><FingerPrintIcon className="w-4 h-4" /> REF</button>
+          <button type="button" onClick={() => setMode('FILE')} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'FILE' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74]'}`}><DocumentIcon className="w-4 h-4" /> FILE</button>
+          <button type="button" onClick={() => setMode('LINK')} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'LINK' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74]'}`}><LinkIcon className="w-4 h-4" /> LINK</button>
+          <button type="button" onClick={() => setMode('REF')} disabled={isFormDisabled} className={`flex-1 md:flex-none flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl text-xs font-black transition-all ${formData.addMethod === 'REF' ? 'bg-[#004A74] text-white shadow-lg' : 'text-gray-400 hover:text-[#004A74]'}`}><FingerPrintIcon className="w-4 h-4" /> REF</button>
         </div>
       } />
       <FormContentArea>
@@ -309,16 +305,16 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center">
                     {isExtracting ? <ArrowPathIcon className="w-5 h-5 text-[#004A74] animate-spin" /> : <LinkIcon className="w-5 h-5 text-gray-300 group-focus-within:text-[#004A74]" />}
                   </div>
-                  <input className={`w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl focus:ring-2 border ${!formData.url ? 'border-red-300' : 'border-gray-200'} text-sm font-medium transition-all ${isFormDisabled ? 'opacity-80' : ''}`} placeholder="Paste research link..." value={formData.url} onChange={(e) => setFormData({...formData, url: e.target.value})} disabled={isFormDisabled} />
+                  <input className={`w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl focus:ring-2 border ${!formData.url ? 'border-red-300' : 'border-gray-200'} text-sm font-medium transition-all`} placeholder="Paste research link..." value={formData.url} onChange={(e) => setFormData({...formData, url: e.target.value})} disabled={isFormDisabled} />
                 </div>
               </FormField>
             ) : formData.addMethod === 'REF' ? (
-              <FormField label="Identifier (Title, DOI, ISBN, PMID, ArXivID, or BibCode)" required error={!formData.doi}>
+              <FormField label="Identifier (DOI, ISBN, PMID, etc.)" required error={!formData.doi}>
                 <div className="relative group">
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center">
                     {isExtracting ? <ArrowPathIcon className="w-5 h-5 text-[#004A74] animate-spin" /> : <FingerPrintIcon className="w-5 h-5 text-gray-300 group-focus-within:text-[#004A74]" />}
                   </div>
-                  <input className={`w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl focus:ring-2 border ${!formData.doi ? 'border-red-300' : 'border-gray-200'} text-sm font-mono font-bold transition-all ${isFormDisabled ? 'opacity-80' : ''}`} placeholder="Enter DOI, ISBN, PMID, ArXivID, Bibcode, or Title..." value={formData.doi} onChange={(e) => setFormData({...formData, doi: e.target.value})} disabled={isFormDisabled} />
+                  <input className={`w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl focus:ring-2 border ${!formData.doi ? 'border-red-300' : 'border-gray-200'} text-sm font-mono font-bold transition-all`} placeholder="Enter DOI, ISBN, PMID, Bibcode, or Title..." value={formData.doi} onChange={(e) => setFormData({...formData, doi: e.target.value})} disabled={isFormDisabled} />
                 </div>
               </FormField>
             ) : (
@@ -374,33 +370,18 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <FormField label="Year (YYYY)">
-              <input 
-                type="number" 
-                className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" 
-                placeholder="YYYY" 
-                value={formData.year} 
-                onChange={(e) => {
-                  const val = e.target.value;
-                  if (val.length <= 4) setFormData({...formData, year: val});
-                }} 
-                onKeyDown={(e) => {
-                  if (['e', '+', '-', '.'].includes(e.key.toLowerCase())) {
-                    e.preventDefault();
-                  }
-                }} 
-                disabled={isFormDisabled} 
-              />
-            </FormField>
-            <FormField label="Date (Calendar Modal)">
-              <input 
-                type="date" 
-                className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" 
-                value={getHtmlDateValue(formData.fullDate)}
-                onChange={handleDateChange} 
-                disabled={isFormDisabled} 
-              />
-            </FormField>
+            <FormField label="Year (YYYY)"><input type="number" className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" placeholder="YYYY" value={formData.year} onChange={(e) => setFormData({...formData, year: e.target.value.substring(0, 4)})} disabled={isFormDisabled} /></FormField>
+            <FormField label="Date (Calendar Modal)"><input type="date" className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" value={getHtmlDateValue(formData.fullDate)} onChange={handleDateChange} disabled={isFormDisabled} /></FormField>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-gray-100">
+            <FormField label="DOI"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="10.xxxx/..." value={formData.doi} onChange={(e) => setFormData({...formData, doi: e.target.value})} disabled={isFormDisabled} /></FormField>
+            <FormField label="PMID"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="PMID" value={formData.pmid} onChange={(e) => setFormData({...formData, pmid: e.target.value})} disabled={isFormDisabled} /></FormField>
+            <FormField label="arXiv ID"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="arXiv ID" value={formData.arxivId} onChange={(e) => setFormData({...formData, arxivId: e.target.value})} disabled={isFormDisabled} /></FormField>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <FormField label="ISSN"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="XXXX-XXXX" value={formData.issn} onChange={(e) => setFormData({...formData, issn: e.target.value})} disabled={isFormDisabled} /></FormField>
+            <FormField label="ISBN"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="978-x-xxx" value={formData.isbn} onChange={(e) => setFormData({...formData, isbn: e.target.value})} disabled={isFormDisabled} /></FormField>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -408,14 +389,15 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             <FormField label="Labels"><FormDropdown isMulti multiValues={formData.labels} onAddMulti={(v) => setFormData({...formData, labels: [...formData.labels, v]})} onRemoveMulti={(v) => setFormData({...formData, labels: formData.labels.filter(a => a !== v)})} options={existingValues.allLabels} placeholder="Thematic labels..." value="" onChange={() => {}} disabled={isFormDisabled} /></FormField>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-100">
-            <FormField label="DOI"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="10.xxxx/..." value={formData.doi} onChange={(e) => setFormData({...formData, doi: e.target.value})} disabled={isFormDisabled} /></FormField>
-            <FormField label="ISSN"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="XXXX-XXXX" value={formData.issn} onChange={(e) => setFormData({...formData, issn: e.target.value})} disabled={isFormDisabled} /></FormField>
-            <FormField label="ISBN"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="978-x-xxx" value={formData.isbn} onChange={(e) => setFormData({...formData, isbn: e.target.value})} disabled={isFormDisabled} /></FormField>
-            <FormField label="PMID"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="PubMed ID" value={formData.pmid} onChange={(e) => setFormData({...formData, pmid: e.target.value})} disabled={isFormDisabled} /></FormField>
-            <FormField label="ArXiv ID"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="yymm.xxxxx" value={formData.arxivId} onChange={(e) => setFormData({...formData, arxivId: e.target.value})} disabled={isFormDisabled} /></FormField>
-            <FormField label="Bibcode"><input className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono" placeholder="ADS Bibcode" value={formData.bibcode} onChange={(e) => setFormData({...formData, bibcode: e.target.value})} disabled={isFormDisabled} /></FormField>
-          </div>
+          <FormField label="Abstract (Official or AI Enhanced)">
+            <textarea 
+              className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm min-h-[150px] leading-relaxed custom-scrollbar font-medium" 
+              placeholder="Abstract content will appear here..." 
+              value={formData.abstract} 
+              onChange={(e) => setFormData({...formData, abstract: e.target.value})} 
+              disabled={isFormDisabled} 
+            />
+          </FormField>
 
           <div className="pt-10 flex flex-col md:flex-row gap-4">
             <button type="button" onClick={() => navigate('/')} disabled={isFormDisabled} className="w-full md:px-10 py-5 bg-gray-100 text-gray-400 rounded-[1.5rem] font-black text-sm uppercase">Cancel</button>

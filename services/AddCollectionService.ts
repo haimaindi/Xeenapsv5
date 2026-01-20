@@ -12,16 +12,16 @@ export const extractMetadataWithAI = async (textSnippet: string): Promise<Partia
     const prompt = `ACT AS AN EXPERT SENIOR ACADEMIC LIBRARIAN. 
     EXTRACT DATA FROM THE PROVIDED TEXT AND RETURN IN RAW JSON FORMAT ONLY.
 
-    --- SPECIAL LOGIC FOR YOUTUBE VIDEOS ---
-    IF the text snippet contains "YOUTUBE_METADATA:" or a YouTube transcript:
+    --- SPECIAL LOGIC FOR YOUTUBE VIDEOS (WHISPER TRANSCRIPTS) ---
+    IF the text snippet contains "YOUTUBE_METADATA:" or appears to be a video transcript:
     - "category": MUST be exactly "Video".
     - "publisher": MUST be exactly "YouTube".
     - "authors": Use the "Channel" name as the only item in the array.
     - "title": Use the "Title" found in the metadata section.
     - "year": Guess the year from the content or transcript context if not found.
     - "inTextAPA", "inTextHarvard", "inTextChicago", "bibAPA", "bibHarvard", "bibChicago": MUST BE EMPTY STRINGS.
-    - EVEN IF TEXT IS VERY SHORT, PRODUCE THE JSON WITH WHATEVER INFO IS PRESENT.
-    ----------------------------------------
+    - ANALYZE the first few paragraphs of the transcript to determine the precise Topic and Subtopic.
+    ----------------------------------------------------------
 
     SCOPE LIMITATION (CRITICAL):
     - ANALYZE ONLY: title, topic, subTopic, authors, publisher, year, keywords, labels, and citation fields.

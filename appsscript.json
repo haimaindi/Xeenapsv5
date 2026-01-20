@@ -1,4 +1,3 @@
-
 {
   "timeZone": "Asia/Jakarta",
   "dependencies": {
@@ -6,6 +5,11 @@
       {
         "userSymbol": "Drive",
         "serviceId": "drive",
+        "version": "v3"
+      },
+      {
+        "userSymbol": "YouTube",
+        "serviceId": "youtube",
         "version": "v3"
       }
     ]
@@ -22,6 +26,7 @@
     "https://www.googleapis.com/auth/drive.file",
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/presentations",
-    "https://www.googleapis.com/auth/script.external_request"
+    "https://www.googleapis.com/auth/script.external_request",
+    "https://www.googleapis.com/auth/youtube.readonly"
   ]
 }

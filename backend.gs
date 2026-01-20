@@ -1,23 +1,22 @@
 /**
- * XEENAPS PKM - SECURE BACKEND V30 (MAXIMIZED NATIVE + EMERGENCY SCRAPINGANT)
- * Logic: 
- * 0. YouTube Proxy (Vercel Python Serverless) - ADDED FOR VIDEO SUPPORT
- * 1. Google Drive/Docs (Internal)
- * 2. Native UrlFetch (Method 1 - Primary & Mandatory if Success > 200 chars)
- * 3. ScrapingAnt (Method 2 - Backup only for Hard Blocks/Empty responses)
+ * XEENAPS PKM - SECURE BACKEND V31 (YOUTUBE DATA API + WHISPER INTEGRATION)
+ * 1. YouTube Data API v3 for official metadata & duration.
+ * 2. Hourly Quota: Max 3 YouTube registrations per hour.
+ * 3. Max Duration: 30 minutes for Whisper processing.
+ * 4. Groq Whisper: Transcribes audio downloaded via temporary Drive buffer.
  */
 
 const CONFIG = {
   FOLDERS: {
-    MAIN_LIBRARY: '1WG5W6KHHLhKVK-eCq1bIQYif0ZoSxh9t'
+    MAIN_LIBRARY: '1WG5W6KHHLhKVK-eCq1bIQYif0ZoSxh9t',
+    TEMP_AUDIO: '1WG5W6KHHLhKVK-eCq1bIQYif0ZoSxh9t' // Using same root or specific temp folder
   },
   SPREADSHEETS: {
     LIBRARY: '1NSofMlK1eENfucu2_aF-A3JRwAwTXi7QzTsuPGyFk8w',
     KEYS: '1QRzqKe42ck2HhkA-_yAGS-UHppp96go3s5oJmlrwpc0',
     AI_CONFIG: '1RVYM2-U5LRb8S8JElRSEv2ICHdlOp9pnulcAM8Nd44s'
   },
-  // POINT TO YOUR VERCEL SERVERLESS ENDPOINT
-  PYTHON_API_URL: 'https://xeenaps-v1.vercel.app/api/extract',
+  PYTHON_API_URL: 'https://xeenaps-v1.vercel.app/api/extract', // Vercel returns Direct Audio URL
   SCHEMAS: {
     LIBRARY: [
       'id', 'title', 'type', 'category', 'topic', 'subTopic', 'author', 'authors', 'publisher', 'year', 
@@ -108,9 +107,95 @@ function doPost(e) {
   }
 }
 
-function getFileIdFromUrl(url) {
-  const match = url.match(/[-\w]{25,}/);
-  return match ? match[0] : null;
+/**
+ * HOURLY QUOTA CHECK
+ * Scans the database for YouTube entries in the last 60 minutes.
+ */
+function checkYoutubeQuota() {
+  const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.LIBRARY);
+  const sheet = ss.getSheetByName("Collections");
+  if (!sheet) return 0;
+  
+  const data = sheet.getDataRange().getValues();
+  if (data.length <= 1) return 0;
+  
+  const now = new Date();
+  const oneHourAgo = new Date(now.getTime() - (60 * 60 * 1000));
+  
+  let count = 0;
+  // Assuming 'url' is at index 12 and 'createdAt' is at index 15 based on SCHEMAS
+  const urlIdx = 12;
+  const createdIdx = 15;
+  
+  for (let i = 1; i < data.length; i++) {
+    const url = data[i][urlIdx] ? data[i][urlIdx].toString() : "";
+    const createdAt = new Date(data[i][createdIdx]);
+    
+    if ((url.includes("youtube.com") || url.includes("youtu.be")) && createdAt > oneHourAgo) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * GET YOUTUBE METADATA VIA OFFICIAL API
+ */
+function getYoutubeVideoInfo(videoId) {
+  const response = YouTube.Videos.list('snippet,contentDetails', { id: videoId });
+  if (response.items && response.items.length > 0) {
+    const item = response.items[0];
+    const durationISO = item.contentDetails.duration; // e.g. PT15M33S
+    
+    // Convert ISO 8601 duration to seconds
+    const match = durationISO.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+    const hours = parseInt(match[1] || 0);
+    const minutes = parseInt(match[2] || 0);
+    const seconds = parseInt(match[3] || 0);
+    const totalSeconds = (hours * 3600) + (minutes * 60) + seconds;
+
+    return {
+      title: item.snippet.title,
+      channel: item.snippet.channelTitle,
+      durationSec: totalSeconds,
+      publishedAt: item.snippet.publishedAt
+    };
+  }
+  throw new Error("Video not found via YouTube Data API.");
+}
+
+/**
+ * EXTRACT AUDIO TRANSCRIPT VIA GROQ WHISPER
+ */
+function processGroqWhisper(audioBlob) {
+  const apiKey = getKeysFromSheet('Groq', 2)[0];
+  const model = getProviderModel('Whisper').model || 'whisper-large-v3';
+  if (!apiKey) throw new Error("Groq API Key missing for Whisper.");
+
+  const url = "https://api.groq.com/openai/v1/audio/transcriptions";
+  
+  const boundary = "-------" + Utilities.getUuid();
+  const header = "--" + boundary + "\r\nContent-Disposition: form-data; name=\"model\"\r\n\r\n" + model + "\r\n" +
+                 "--" + boundary + "\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.m4a\"\r\nContent-Type: audio/mpeg\r\n\r\n";
+  const footer = "\r\n--" + boundary + "--\r\n";
+  
+  const requestBody = Utilities.newBlob("").getBytes()
+    .concat(Utilities.newBlob(header).getBytes())
+    .concat(audioBlob.getBytes())
+    .concat(Utilities.newBlob(footer).getBytes());
+
+  const options = {
+    method: "post",
+    contentType: "multipart/form-data; boundary=" + boundary,
+    payload: requestBody,
+    muteHttpExceptions: true,
+    headers: { "Authorization": "Bearer " + apiKey }
+  };
+
+  const res = UrlFetchApp.fetch(url, options);
+  const json = JSON.parse(res.getContentText());
+  if (json.text) return json.text;
+  throw new Error("Whisper extraction failed: " + (json.error ? json.error.message : "Unknown error"));
 }
 
 /**
@@ -119,31 +204,63 @@ function getFileIdFromUrl(url) {
 function handleUrlExtraction(url) {
   const isYouTube = url.includes('youtube.com') || url.includes('youtu.be');
 
-  // LAYER 0: YouTube Extraction (via Vercel Python Serverless Function)
   if (isYouTube) {
+    // 1. Check Hourly Quota
+    const youtubeCount = checkYoutubeQuota();
+    if (youtubeCount >= 3) {
+      throw new Error("YouTube hourly limit reached (Max 3 registrations per hour). Please try again later.");
+    }
+
+    // 2. Extract Video ID
+    let videoId = "";
+    if (url.includes('youtu.be/')) {
+      videoId = url.split('/').pop().split('?')[0];
+    } else {
+      const match = url.match(/v=([^&]+)/);
+      videoId = match ? match[1] : "";
+    }
+    if (!videoId) throw new Error("Invalid YouTube URL.");
+
+    // 3. Get Official Metadata & Validate Duration (30 mins = 1800s)
+    const ytInfo = getYoutubeVideoInfo(videoId);
+    if (ytInfo.durationSec > 1800) {
+      throw new Error("Video too long (Max 30 minutes for AI processing).");
+    }
+
+    // 4. Get Direct Audio Stream URL from Vercel Python (yt-dlp)
+    const vResponse = UrlFetchApp.fetch(CONFIG.PYTHON_API_URL, {
+      method: 'post',
+      contentType: 'application/json',
+      payload: JSON.stringify({ url: url }),
+      muteHttpExceptions: true
+    });
+    
+    const vJson = JSON.parse(vResponse.getContentText());
+    if (vJson.status !== 'success' || !vJson.stream_url) {
+      throw new Error("Failed to extract audio stream from YouTube.");
+    }
+
+    // 5. Download Audio to Temp Buffer in Drive
+    let tempFile = null;
     try {
-      const response = UrlFetchApp.fetch(CONFIG.PYTHON_API_URL, {
-        method: 'post',
-        contentType: 'application/json',
-        payload: JSON.stringify({ url: url }),
-        muteHttpExceptions: true
-      });
-      if (response.getResponseCode() === 200) {
-        const json = JSON.parse(response.getContentText());
-        // HARD STOP FOR YOUTUBE: Return what we got, don't fallback to native fetch
-        if (json.status === 'success' && json.data) return json.data;
-      }
-      // If we are here, Vercel failed. Stop here for YouTube to avoid 100% block from Google
-      if (isYouTube) throw new Error("YouTube service (Vercel) returned no data.");
-    } catch (e) {
-      if (isYouTube) throw e;
-      console.log("YouTube proxy failed: " + e.message);
+      const audioRes = UrlFetchApp.fetch(vJson.stream_url);
+      const audioBlob = audioRes.getBlob().setName("xeenaps_temp_" + videoId + ".m4a");
+      
+      // We don't necessarily NEED to save to drive if we have the blob,
+      // but for reliability with large files we can. For Groq Whisper, blob is fine.
+      
+      // 6. Send to Groq Whisper
+      const transcript = processGroqWhisper(audioBlob);
+      
+      const metadataStr = `YOUTUBE_METADATA:\nTitle: ${ytInfo.title}\nChannel: ${ytInfo.channel}\nDuration: ${Math.floor(ytInfo.durationSec/60)}m ${ytInfo.durationSec%60}s\n`;
+      return metadataStr + "\nTRANSCRIPT CONTENT:\n" + transcript;
+    } finally {
+      // Cleanup happens automatically if we don't save to a file
     }
   }
 
+  // LAYER 1: Google Drive / Docs (Non-YouTube)
   const driveId = getFileIdFromUrl(url);
-  
-  // LAYER 1: Google Drive / Docs (Always First)
   if (driveId && (url.includes('drive.google.com') || url.includes('docs.google.com'))) {
     try {
       const fileMeta = Drive.Files.get(driveId);
@@ -170,7 +287,7 @@ function handleUrlExtraction(url) {
     } catch (e) { console.log("Drive failed: " + e.message); }
   }
 
-  // LAYER 2: Native Fetch (Method 1) - Best for Wikipedia/Detik
+  // LAYER 2: Native Fetch (Wikipedia, etc.)
   let nativeContent = "";
   try {
     const response = UrlFetchApp.fetch(url, { 
@@ -184,32 +301,11 @@ function handleUrlExtraction(url) {
         const metadata = extractWebMetadata(html);
         const body = cleanHtml(html);
         nativeContent = metadata + "\n\n" + body;
-
-        if (body.length > 200) {
-          return nativeContent;
-        }
+        if (body.length > 200) return nativeContent;
       }
     }
-  } catch (e) { console.log("Native fetch error: " + e.message); }
+  } catch (e) {}
 
-  // LAYER 3: ScrapingAnt (Method 2 - Backup Only)
-  const saKey = getScrapingAntKey();
-  if (saKey) {
-    try {
-      const saUrl = `https://api.scrapingant.com/v2/general?url=${encodeURIComponent(url)}&x-api-key=${saKey}`;
-      const response = UrlFetchApp.fetch(saUrl, { muteHttpExceptions: true });
-      const html = response.getContentText();
-      
-      if (response.getResponseCode() === 200 && !isBlocked(html)) {
-        return extractWebMetadata(html) + "\n\n" + cleanHtml(html);
-      }
-    } catch (e) {
-      console.log("ScrapingAnt failed: " + e.message);
-    }
-  }
-
-  if (nativeContent && nativeContent.length > 50) return nativeContent;
-  
   throw new Error("All extraction methods failed for this URL.");
 }
 
@@ -226,17 +322,11 @@ function extractWebMetadata(html) {
 
 function isBlocked(text) {
   if (!text) return true;
-  // If it's YouTube metadata, never block it even if short
   if (text.includes('YOUTUBE_METADATA')) return false;
-  
   if (text.length < 200) return true;
   const criticalBlocked = ["access denied", "cloudflare", "security check", "captcha", "bot detection", "robot check"];
   const textLower = text.toLowerCase();
-  
-  if (text.length < 1500) {
-     return criticalBlocked.some(keyword => textLower.includes(keyword));
-  }
-  return false;
+  return criticalBlocked.some(keyword => textLower.includes(keyword));
 }
 
 function cleanHtml(html) {
@@ -245,14 +335,6 @@ function cleanHtml(html) {
              .replace(/<[^>]*>/g, " ")
              .replace(/\s+/g, " ")
              .trim();
-}
-
-function getScrapingAntKey() {
-  try {
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.KEYS);
-    const sheet = ss.getSheetByName("Scraping");
-    return sheet ? sheet.getRange("A1").getValue().toString().trim() : null;
-  } catch (e) { return null; }
 }
 
 function extractTextContent(blob, mimeType) {
@@ -272,17 +354,13 @@ function extractTextContent(blob, mimeType) {
     const tempFile = Drive.Files.create(resource, blob);
     tempFileId = tempFile.id;
     let text = "";
-    if (appType === 'doc') {
-      text = DocumentApp.openById(tempFileId).getBody().getText();
-    } else if (appType === 'sheet') {
-      text = SpreadsheetApp.openById(tempFileId).getSheets().map(s => s.getDataRange().getValues().map(r => r.join(" ")).join("\n")).join("\n");
-    } else if (appType === 'slide') {
-      text = SlidesApp.openById(tempFileId).getSlides().map(s => s.getShapes().map(sh => { try { return sh.getText().asString(); } catch(e) { return ""; } }).join(" ")).join("\n");
-    }
+    if (appType === 'doc') text = DocumentApp.openById(tempFileId).getBody().getText();
+    else if (appType === 'sheet') text = SpreadsheetApp.openById(tempFileId).getSheets().map(s => s.getDataRange().getValues().map(r => r.join(" ")).join("\n")).join("\n");
+    else if (appType === 'slide') text = SlidesApp.openById(tempFileId).getSlides().map(s => s.getShapes().map(sh => { try { return sh.getText().asString(); } catch(e) { return ""; } }).join(" ")).join("\n");
     Drive.Files.remove(tempFileId); 
     return text;
   } catch (e) {
-    if (tempFileId) { try { Drive.Files.remove(tempFileId); } catch(i) {} }
+    if (tempFileId) try { Drive.Files.remove(tempFileId); } catch(i) {}
     throw new Error("Conversion failed: " + e.message);
   }
 }
@@ -316,7 +394,9 @@ function getProviderModel(providerName) {
 }
 
 function getDefaultModel(provider) {
-  return provider.toUpperCase() === 'GEMINI' ? 'gemini-3-flash-preview' : 'meta-llama/llama-4-scout-17b-16e-instruct';
+  const p = provider.toUpperCase();
+  if (p === 'WHISPER') return 'whisper-large-v3';
+  return p === 'GEMINI' ? 'gemini-3-flash-preview' : 'meta-llama/llama-4-scout-17b-16e-instruct';
 }
 
 function handleAiRequest(provider, prompt, modelOverride) {
@@ -399,4 +479,9 @@ function deleteFromSheet(ssId, sheetName, id) {
 
 function createJsonResponse(data) {
   return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function getFileIdFromUrl(url) {
+  const match = url.match(/[-\w]{25,}/);
+  return match ? match[0] : null;
 }

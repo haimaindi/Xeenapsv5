@@ -4,4 +4,4 @@ python-pptx
 python-docx
 openpyxl
 requests
-youtube-transcript-api
+yt-dlp

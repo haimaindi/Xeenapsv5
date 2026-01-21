@@ -51,12 +51,11 @@ import LibraryDetailView from './LibraryDetailView';
 /**
  * Custom Tooltip Component for truncated text
  * Implements "Overlay Expansion" using React Portal.
- * This ensures the tooltip is rendered at the body level, bypassing table stacking contexts
- * and appearing above frozen columns (z-index: 10000).
+ * Fixed: Uniform text sizing for all types and dynamic box width based on content.
  */
-const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode; isTitle?: boolean }> = ({ text, children, isTitle }) => {
+const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode }> = ({ text, children }) => {
   const [show, setShow] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0, height: 0 });
+  const [pos, setPos] = useState({ top: 0, left: 0, minWidth: 0 });
   const anchorRef = useRef<HTMLDivElement>(null);
 
   const handleMouseEnter = () => {
@@ -64,21 +63,14 @@ const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode; isTitl
       const rect = anchorRef.current.getBoundingClientRect();
       const screenWidth = window.innerWidth;
       
-      // Calculate expansion width
-      const expandWidth = Math.max(rect.width + 48, 420);
-      
-      // Alignment logic: Center the expansion over the anchor if possible, or shift to fit screen
-      let finalLeft = rect.left - 24; 
-      if (finalLeft + expandWidth > screenWidth - 20) {
-        finalLeft = screenWidth - expandWidth - 20;
-      }
+      // Calculate start position
+      let finalLeft = rect.left - 16;
       if (finalLeft < 10) finalLeft = 10;
 
       setPos({
-        top: rect.top - 12, // Offset slightly up to wrap the content nicely
+        top: rect.top - 8, 
         left: finalLeft,
-        width: expandWidth,
-        height: rect.height + 24
+        minWidth: rect.width + 32
       });
       setShow(true);
     }
@@ -96,20 +88,21 @@ const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode; isTitl
       {children}
       {show && createPortal(
         <div 
-          className="fixed z-[10000] pointer-events-none glass rounded-[2rem] border border-[#004A74]/30 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
+          className="fixed z-[10000] pointer-events-none glass rounded-[1.5rem] border border-[#004A74]/30 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
           style={{ 
             left: `${pos.left}px`, 
             top: `${pos.top}px`,
-            width: `${pos.width}px`,
-            maxWidth: '650px',
-            minHeight: `${pos.height}px`
+            width: 'fit-content',
+            minWidth: `${pos.minWidth}px`,
+            maxWidth: 'min(600px, 90vw)'
           }}
         >
-          <div className="p-6 flex items-start gap-4">
-            <div className="shrink-0 mt-1 bg-[#004A74]/10 p-1.5 rounded-lg">
-              <InformationCircleIcon className="w-4 h-4 text-[#004A74]" />
+          <div className="p-4 flex items-start gap-3">
+            <div className="shrink-0 mt-0.5 bg-[#004A74]/10 p-1 rounded-lg">
+              <InformationCircleIcon className="w-3.5 h-3.5 text-[#004A74]" />
             </div>
-            <p className={`text-[#004A74] leading-relaxed break-words whitespace-normal ${isTitle ? 'text-sm font-bold' : 'text-xs font-medium italic'}`}>
+            {/* Unified style: text-xs font-medium italic for all meta data expansion */}
+            <p className="text-[#004A74] text-xs font-medium italic leading-relaxed break-words whitespace-normal">
               {text}
             </p>
           </div>
@@ -136,10 +129,8 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
   const navigate = useNavigate();
   const location = useLocation();
   
-  // AbortController workflow manager
   const workflow = useAsyncWorkflow(30000);
   
-  // Server-Side States
   const [serverItems, setServerItems] = useState<LibraryItem[]>([]);
   const [totalItemsServer, setTotalItemsServer] = useState(0);
   const [isInternalLoading, setIsInternalLoading] = useState(false);
@@ -150,7 +141,6 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   
-  // FIXED INITIAL STATE: Default to createdAt DESC for accurate initial load as per agreement
   const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'createdAt', direction: 'desc' });
   
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
@@ -166,7 +156,6 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
   const itemsPerPage = isMobile ? 20 : 25;
   const filters: ('All' | LibraryType)[] = ['All', LibraryType.LITERATURE, LibraryType.TASK, LibraryType.PERSONAL, LibraryType.OTHER];
   
-  // Sync initial global search if any
   useEffect(() => {
     if (globalSearch && !appliedSearch) {
       setLocalSearch(globalSearch);
@@ -174,12 +163,11 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
     }
   }, [globalSearch]);
 
-  // Unified Fetch Data with AbortController and Server-Side Sorting Support
   useEffect(() => {
     workflow.execute(
       async (signal) => {
         setIsInternalLoading(true);
-        const pathPart = location.pathname.substring(1); // 'favorite', 'bookmark', etc
+        const pathPart = location.pathname.substring(1); 
         
         const sortKey = sortConfig.key === 'none' ? 'createdAt' : sortConfig.key;
         const sortDir = sortConfig.direction || 'desc';
@@ -200,14 +188,13 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
       () => setIsInternalLoading(false),
       (err) => {
         setIsInternalLoading(false);
-        // Error is handled by useAsyncWorkflow (e.g., ignoring manual aborts)
       }
     );
   }, [currentPage, appliedSearch, activeFilter, location.pathname, itemsPerPage, sortConfig.key, sortConfig.direction, onRefresh]);
 
   const handleSearchTrigger = () => {
     setAppliedSearch(localSearch);
-    setCurrentPage(1); // Reset to first page on new search
+    setCurrentPage(1);
   };
 
   const handleSort = (key: keyof LibraryItem) => {
@@ -217,7 +204,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
       else if (sortConfig.direction === 'desc') direction = null;
     }
     setSortConfig({ key: direction ? key : 'none', direction });
-    setCurrentPage(1); // Reset to first page when sorting changes
+    setCurrentPage(1); 
   };
 
   const getSortIcon = (key: keyof LibraryItem) => {
@@ -279,7 +266,6 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
     }
   };
 
-  // Inline Skeleton Rows
   const SkeletonRows = () => (
     <>
       {[...Array(5)].map((_, i) => (
@@ -311,7 +297,6 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
 
   return (
     <div className="flex flex-col flex-1 h-full overflow-y-auto no-scrollbar space-y-4 animate-in fade-in duration-500 relative pr-1">
-      {/* Detail Overlay */}
       {selectedItem && (
         <LibraryDetailView item={selectedItem} onClose={() => setSelectedItem(null)} />
       )}
@@ -371,7 +356,6 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
         <StandardQuickActionButton variant="warning" onClick={() => handleBatchAction('isFavorite')}><StarIcon className="w-5 h-5" /></StandardQuickActionButton>
       </StandardQuickAccessBar>
 
-      {/* Table View (Desktop) */}
       <div className="hidden lg:flex flex-col flex-none">
         <StandardTableContainer>
           <StandardTableWrapper>
@@ -407,7 +391,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                       <StandardCheckbox checked={selectedIds.includes(item.id)} onChange={() => toggleSelectItem(item.id)} />
                     </td>
                     <StandardTd isActiveSort={sortConfig.key === 'title'} className="sticky left-12 z-20 border-r border-gray-100/50 bg-white group-hover:bg-[#f0f7fa] shadow-sm">
-                      <ElegantTooltip text={item.title} isTitle>
+                      <ElegantTooltip text={item.title}>
                         <div className="flex items-start gap-2 group/title w-full">
                           <div className="shrink-0 mt-0.5 transition-transform group-hover/title:scale-110">
                             {item.addMethod === 'FILE' ? (
@@ -449,11 +433,19 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                     <StandardTd isActiveSort={sortConfig.key === 'category'} className="text-xs text-gray-600 text-center">
                       <div className="line-clamp-2">{item.category || '-'}</div>
                     </StandardTd>
-                    <StandardTd isActiveSort={sortConfig.key === 'topic'} className="text-xs text-gray-600 text-center">
-                      <div className="line-clamp-2">{item.topic || '-'}</div>
+                    <StandardTd isActiveSort={sortConfig.key === 'topic'}>
+                      <ElegantTooltip text={item.topic}>
+                        <div className="text-xs text-gray-600 text-center w-full block overflow-hidden" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                          {item.topic || '-'}
+                        </div>
+                      </ElegantTooltip>
                     </StandardTd>
-                    <StandardTd isActiveSort={sortConfig.key === 'subTopic'} className="text-xs text-gray-600 text-center">
-                      <div className="line-clamp-2">{item.subTopic || '-'}</div>
+                    <StandardTd isActiveSort={sortConfig.key === 'subTopic'}>
+                      <ElegantTooltip text={item.subTopic}>
+                        <div className="text-xs text-gray-600 text-center w-full block overflow-hidden" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                          {item.subTopic || '-'}
+                        </div>
+                      </ElegantTooltip>
                     </StandardTd>
                     <StandardTd isActiveSort={sortConfig.key === 'createdAt'} className="text-xs font-medium text-gray-400 whitespace-nowrap text-center">{formatDateTime(item.createdAt)}</StandardTd>
                   </StandardTr>
@@ -465,7 +457,6 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
         </StandardTableContainer>
       </div>
 
-      {/* Grid View (Mobile/Tablet) */}
       <div className="lg:hidden flex-none pb-10">
         <StandardGridContainer>
           {isInternalLoading ? (

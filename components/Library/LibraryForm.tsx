@@ -170,6 +170,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     topics: Array.from(new Set(items.map(i => i.topic).filter(Boolean))),
     subTopics: Array.from(new Set(items.map(i => i.subTopic).filter(Boolean))),
     publishers: Array.from(new Set(items.map(i => i.publisher).filter(Boolean))),
+    journalNames: Array.from(new Set(items.map(i => i.journalName).filter(Boolean))),
     allAuthors: Array.from(new Set(items.flatMap(i => i.authors || []).filter(Boolean))),
     allKeywords: Array.from(new Set(items.flatMap(i => i.keywords || []).filter(Boolean))),
     allLabels: Array.from(new Set(items.flatMap(i => i.labels || []).filter(Boolean))),
@@ -533,7 +534,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
 
           <div className="space-y-6 bg-gray-50/30 p-6 rounded-[2rem] border border-gray-100">
             <FormField label="Publisher"><FormDropdown value={formData.publisher} onChange={(v) => setFormData({...formData, publisher: v})} options={existingValues.publishers} placeholder="Publisher name..." disabled={isFormDisabled} /></FormField>
-            <FormField label="Journal"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm font-medium" placeholder="Journal name..." value={formData.journalName} onChange={(e) => setFormData({...formData, journalName: e.target.value})} disabled={isFormDisabled} /></FormField>
+            <FormField label="Journal"><FormDropdown value={formData.journalName} onChange={(v) => setFormData({...formData, journalName: v})} options={existingValues.journalNames} placeholder="Journal name..." disabled={isFormDisabled} /></FormField>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <FormField label="Volume"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm" placeholder="Volume" value={formData.volume} onChange={(e) => setFormData({...formData, volume: e.target.value})} disabled={isFormDisabled} /></FormField>
               <FormField label="Issue"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm" placeholder="Issue" value={formData.issue} onChange={(e) => setFormData({...formData, issue: e.target.value})} disabled={isFormDisabled} /></FormField>

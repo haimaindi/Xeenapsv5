@@ -1,3 +1,4 @@
+
 /**
  * XEENAPS PKM - WEB EXTRACTION MODULE
  */
@@ -52,9 +53,19 @@ function extractWebMetadata(html) {
   if (siteMatch) metaInfo += `WEBSITE_PUBLISHER: ${siteMatch[1].trim()}\n`;
 
   // PRIMARY DOI DETECTION (Meta Tags) - Critical to ignore reference list DOIs
-  const doiMatch = html.match(/<meta[^>]*name=["'](?:citation_doi|dc.identifier)["'][^>]*content=["']([^"']+)["']/i) ||
-                   html.match(/<meta[^>]*content=["']([^"']+)["'][^>]*name=["'](?:citation_doi|dc.identifier)["']/i);
-  if (doiMatch) metaInfo += `PRIMARY_DOI: ${doiMatch[1].trim()}\n`;
+  // Priority: citation_doi, dc.identifier, prism.doi, then generic doi
+  const doiPatterns = [
+    /<meta[^>]*name=["'](?:citation_doi|dc.identifier|prism.doi|doi)["'][^>]*content=["']([^"']+)["']/i,
+    /<meta[^>]*content=["']([^"']+)["'][^>]*name=["'](?:citation_doi|dc.identifier|prism.doi|doi)["']/i
+  ];
+
+  for (const pattern of doiPatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      metaInfo += `PRIMARY_DOI: ${match[1].trim()}\n`;
+      break;
+    }
+  }
 
   return metaInfo;
 }

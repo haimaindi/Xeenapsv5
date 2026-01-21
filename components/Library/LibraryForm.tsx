@@ -211,44 +211,83 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     }));
   };
 
+  const isSocialMediaBlocked = (url: string) => {
+    const blockedDomains = [/instagram\.com/i, /tiktok\.com/i, /facebook\.com/i, /linkedin\.com/i, /twitter\.com/i, /x\.com/i];
+    return blockedDomains.some(pattern => pattern.test(url));
+  };
+
+  const isDriveFormatSupported = (mime: string) => {
+    if (!mime) return true; // Fallback if no mime detected
+    const allowed = [
+      'application/pdf', 
+      'image/', 
+      'application/vnd.google-apps.document',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'text/plain',
+      'application/vnd.google-apps.presentation',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.google-apps.spreadsheet',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'text/csv'
+    ];
+    return allowed.some(type => mime.toLowerCase().includes(type.toLowerCase()));
+  };
+
   useEffect(() => {
     const handleUrlExtraction = async () => {
       const url = formData.url.trim();
-      // Exclude YouTube from identifier workflow (it has its own extraction method in backend)
-      const isYoutube = url.includes('youtube.com') || url.includes('youtu.be');
+      if (!url || !url.startsWith('http') || url === lastExtractedUrl.current || formData.addMethod !== 'LINK') return;
 
-      if (url && url.startsWith('http') && url !== lastExtractedUrl.current && formData.addMethod === 'LINK') {
-        lastExtractedUrl.current = url;
-        setExtractionStage('READING');
-        try {
-          const res = await fetch(GAS_WEB_APP_URL, {
-            method: 'POST',
-            body: JSON.stringify({ action: 'extractOnly', url }),
-          });
-          const data = await res.json();
-          if (data.status === 'success' && data.extractedText) {
-            if (isYoutube) {
-              // YouTube specific extraction (Simple AI Enrichment)
-              setExtractionStage('AI_ANALYSIS');
-              const aiEnriched = await extractMetadataWithAI(data.extractedText, formData);
-              setFormData(prev => ({ ...prev, ...aiEnriched, chunks: chunkifyText(data.extractedText) }));
-            } else {
-              // Regular LINK workflow (Websites/Drive) synced with FILE workflow
-              const ids = { 
-                doi: data.detectedDoi, 
-                isbn: data.detectedIsbn, 
-                pmid: data.detectedPmid, 
-                arxivId: data.detectedArxiv,
-                imageView: data.imageView 
-              };
-              await runExtractionWorkflow(data.extractedText, chunkifyText(data.extractedText), ids);
-            }
+      // 1. Social Media Check (Allow YouTube only)
+      if (isSocialMediaBlocked(url) && !url.includes('youtube.com') && !url.includes('youtu.be')) {
+        showXeenapsAlert({ icon: 'error', title: 'LINK NON SUPPORTED', text: 'Social media links (except YouTube) are not allowed.' });
+        setFormData(prev => ({ ...prev, url: '' }));
+        return;
+      }
+
+      lastExtractedUrl.current = url;
+      setExtractionStage('READING');
+      try {
+        const res = await fetch(GAS_WEB_APP_URL, {
+          method: 'POST',
+          body: JSON.stringify({ action: 'extractOnly', url }),
+        });
+        const data = await res.json();
+
+        if (data.status === 'success' && data.extractedText) {
+          const isDrive = url.includes('drive.google.com') || url.includes('docs.google.com');
+          const isYoutube = url.includes('youtube.com') || url.includes('youtu.be');
+
+          // 2. Drive Mime Validation
+          if (isDrive && data.mimeType && !isDriveFormatSupported(data.mimeType)) {
+            showXeenapsAlert({ icon: 'error', title: 'LINK NON SUPPORTED', text: 'Audio, video, or unsupported Drive formats are not allowed.' });
+            setFormData(prev => ({ ...prev, url: '' }));
+            return;
           }
-        } catch (err: any) {
-          showXeenapsAlert({ icon: 'warning', title: 'EXTRACTION FAILED', text: 'This link can not be extracted automatically.' });
-        } finally {
-          setExtractionStage('IDLE');
+
+          if (isYoutube) {
+            setExtractionStage('AI_ANALYSIS');
+            const aiEnriched = await extractMetadataWithAI(data.extractedText, formData);
+            setFormData(prev => ({ ...prev, ...aiEnriched, chunks: chunkifyText(data.extractedText) }));
+          } else {
+            // SNIPPET TO 7500 FOR IDENTIFIER SEARCH (Sync with backend limit)
+            const ids = { 
+              doi: data.detectedDoi, 
+              isbn: data.detectedIsbn, 
+              pmid: data.detectedPmid, 
+              arxivId: data.detectedArxiv,
+              imageView: data.imageView 
+            };
+            await runExtractionWorkflow(data.extractedText, chunkifyText(data.extractedText), ids);
+          }
         }
+      } catch (err: any) {
+        showXeenapsAlert({ icon: 'warning', title: 'EXTRACTION FAILED', text: 'This link can not be extracted automatically.' });
+      } finally {
+        setExtractionStage('IDLE');
       }
     };
     const tid = setTimeout(handleUrlExtraction, 1000);

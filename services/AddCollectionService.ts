@@ -4,7 +4,7 @@ import { callAiProxy } from "./gasService";
 
 /**
  * AddCollectionService - Metadata Extraction via AI Proxy (GROQ).
- * FOCUS: Verbatim abstract extraction, non-truncated Harvard citations, and metadata-aware enrichment.
+ * FOCUS: Verbatim abstract extraction, Parenthetical Harvard citations, and metadata-aware enrichment.
  */
 export const extractMetadataWithAI = async (textSnippet: string, existingData: Partial<LibraryItem> = {}): Promise<Partial<LibraryItem>> => {
   try {
@@ -23,9 +23,10 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
        - CLEANING: Remove all markdown symbols like *, #, or brackets.
        - EMPTY FALLBACK: If NO abstract is found in the snippet, return an empty string "". DO NOT hallucinate.
     3. CITATION GENERATION (PREMIUM ACCURACY):
-       - Style: Harvard (Standard British/Australian).
-       - ACCURACY: Follow the latest edition rules strictly.
-       - NO TRUNCATION (CRITICAL): Do NOT use "et al." or "...". YOU MUST LIST ALL AUTHORS provided in the metadata context in both the in-text and bibliographic entries. Never cut the citation short.
+       - Style: Harvard (Parenthetical).
+       - IN-TEXT FORMAT: (Author, Year). Example: (Harris, Snell, Talbot and Harden, 2010).
+       - DO NOT use narrative style (e.g. Harris et al. (2010)). Use ONLY the parenthetical style.
+       - NO TRUNCATION (CRITICAL): Do NOT use "et al." or "...". YOU MUST LIST ALL AUTHORS provided in the metadata context in both the in-text and bibliographic entries.
     4. NO HALLUCINATION: Identifiers (DOI, ISBN, etc.) must be EXPLICIT in the snippet.
     5. DATA CLEANING: For "volume", "issue", and "pages", provide ONLY numbers/identifiers (no prefixes like "Vol.").
     --------------------------
@@ -56,7 +57,7 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
       "volume": "14",
       "issue": "2",
       "pages": "120-135",
-      "inTextHarvard": "Full non-truncated Harvard in-text citation (List ALL authors)",
+      "inTextHarvard": "Full parenthetical Harvard in-text citation (List ALL authors, e.g. (Author1, Author2 and Author3, 2024))",
       "bibHarvard": "Full non-truncated Harvard bibliographic entry (List ALL authors)"
     }`;
 

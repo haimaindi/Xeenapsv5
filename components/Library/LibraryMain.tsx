@@ -49,6 +49,7 @@ import {
 } from '../Common/ButtonComponents';
 import LibraryDetailView from './LibraryDetailView';
 import { showXeenapsAlert } from '../../utils/swalUtils';
+import { showXeenapsDeleteConfirm } from '../../utils/confirmUtils';
 
 /**
  * Custom Tooltip Component for truncated text
@@ -132,7 +133,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
   const location = useLocation();
   
   const workflow = useAsyncWorkflow(30000);
-  const { performUpdate } = useOptimisticUpdate<LibraryItem>();
+  const { performUpdate, performDelete } = useOptimisticUpdate<LibraryItem>();
   
   const [serverItems, setServerItems] = useState<LibraryItem[]>([]);
   const [totalItemsServer, setTotalItemsServer] = useState(0);
@@ -244,12 +245,29 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
 
   const handleBatchDelete = async () => {
     if (selectedIds.length === 0) return;
-    setIsInternalLoading(true);
-    for (const id of selectedIds) {
-      await deleteLibraryItem(id);
-    }
+    
+    // 1. Confirmation Modal (Danger Style)
+    const confirmed = await showXeenapsDeleteConfirm(selectedIds.length);
+    if (!confirmed) return;
+
+    // 2. Optimized: Batch Delete with Optimistic UI (No global loading)
+    await performDelete(
+      serverItems,
+      setServerItems,
+      selectedIds,
+      async (id) => await deleteLibraryItem(id),
+      (err) => {
+        showXeenapsAlert({
+          icon: 'error',
+          title: 'SYNC FAILED',
+          text: 'One or more items could not be deleted from the server. UI has been rolled back.'
+        });
+      }
+    );
+    
     setSelectedIds([]);
-    onRefresh();
+    // We don't call onRefresh here to maintain "Instant UI" feel, 
+    // though totalItemsServer might be slightly off until next page/filter change.
   };
 
   /**

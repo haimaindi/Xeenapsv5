@@ -34,13 +34,19 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
        - LABELS: You MUST provide EXACTLY 3 thematic labels.
        - TOPIC & SUBTOPIC: You MUST determine a high-level Topic and a specific Sub-Topic.
        - CATEGORY: You MUST choose ONLY ONE category from the APPROVED LIST provided below.
-    4. VERBATIM ABSTRACT (CRITICAL):
+    4. YOUTUBE SPECIAL HANDLING (CRITICAL):
+       - If the TEXT SNIPPET contains "YOUTUBE_METADATA:", you MUST:
+         * Set "publisher" to "Youtube" verbatim.
+         * Set "category" to "Video" verbatim.
+         * Extract the Channel name and put it as the ONLY entry in the "authors" array.
+         * Extract the upload date to fill "year" (YYYY) and "fullDate" (DD MMM YYYY).
+    5. VERBATIM ABSTRACT (CRITICAL):
        - EXTRACT the abstract exactly as written in the "TEXT SNIPPET". 
        - DO NOT SUMMARIZE OR PARAPHRASE.
        - FORMATTING: Use <b> tag for sub-headers and <br/> for line breaks.
        - EMPHASIS: Use <b><i> tags for key findings.
-    5. CITATION GENERATION: Harvard (Parenthetical) style.
-    6. STRICT RESTRICTION: DO NOT fill "summary", "strength", "weakness", "researchMethodology", "unfamiliarTerminology", "supportingReferences", "videoRecommendation", or "quickTipsForYou".
+    6. CITATION GENERATION: Harvard (Parenthetical) style.
+    7. STRICT RESTRICTION: DO NOT fill "summary", "strength", "weakness", "researchMethodology", "unfamiliarTerminology", "supportingReferences", "videoRecommendation", or "quickTipsForYou".
     --------------------------
 
     APPROVED CATEGORY LIST:

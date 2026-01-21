@@ -133,7 +133,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
   const [formData, setFormData] = useState({
     addMethod: 'FILE' as 'LINK' | 'FILE' | 'REF', 
     type: LibraryType.LITERATURE, 
-    category: 'Original Research',
+    category: '',
     topic: '',
     subTopic: '',
     title: '',
@@ -220,6 +220,13 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     setExtractionStage('AI_ANALYSIS');
     const aiEnriched = await extractMetadataWithAI(extractedText, baseData);
     
+    // YouTube Specific Logic Overrides
+    const isYouTube = extractedText.includes("YOUTUBE_METADATA") || (baseData.url && (baseData.url.includes('youtube.com') || baseData.url.includes('youtu.be')));
+    if (isYouTube) {
+      aiEnriched.publisher = "Youtube";
+      aiEnriched.category = "Video";
+    }
+
     setFormData(prev => ({
       ...prev,
       ...aiEnriched,

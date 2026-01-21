@@ -26,7 +26,7 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
     const prompt = `ACT AS AN EXPERT SENIOR ACADEMIC LIBRARIAN (XEENAPS AI LIBRARIAN). 
     YOUR TASK IS TO ORGANIZE AND CLEAN THE METADATA FOR A LIBRARY ENTRY BASED ON THE PROVIDED TEXT.
 
-    --- MANDATORY WORKFLOW ---
+    --- ROBUST MANDATORY WORKFLOW ---
     1. LIBRARIAN ROLE: Identify Title, Authors, Publisher, Year, and technical identifiers.
     2. GAP-FILLING: Use "EXISTING_DATA" as core facts. Fill ONLY fields that are empty ("") or "N/A".
     3. MANDATORY CLASSIFICATION (CRITICAL):

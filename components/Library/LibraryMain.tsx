@@ -6,6 +6,7 @@ import { createPortal } from 'react-dom';
 import { LibraryItem, LibraryType } from '../../types';
 import { deleteLibraryItem, saveLibraryItem, fetchLibraryPaginated } from '../../services/gasService';
 import { useAsyncWorkflow } from '../../hooks/useAsyncWorkflow';
+import { useOptimisticUpdate } from '../../hooks/useOptimisticUpdate';
 import { 
   TrashIcon, 
   BookmarkIcon, 
@@ -47,6 +48,7 @@ import {
   StandardFilterButton 
 } from '../Common/ButtonComponents';
 import LibraryDetailView from './LibraryDetailView';
+import { showXeenapsAlert } from '../../utils/swalUtils';
 
 /**
  * Custom Tooltip Component for truncated text
@@ -130,6 +132,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
   const location = useLocation();
   
   const workflow = useAsyncWorkflow(30000);
+  const { performUpdate } = useOptimisticUpdate<LibraryItem>();
   
   const [serverItems, setServerItems] = useState<LibraryItem[]>([]);
   const [totalItemsServer, setTotalItemsServer] = useState(0);
@@ -238,16 +241,33 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
     onRefresh();
   };
 
+  /**
+   * Optimized: Seamless handleBatchAction with Optimistic UI
+   */
   const handleBatchAction = async (property: 'isBookmarked' | 'isFavorite') => {
     if (selectedIds.length === 0) return;
-    setIsInternalLoading(true);
+    
     const selectedItems = serverItems.filter(i => selectedIds.includes(i.id));
     const anyFalse = selectedItems.some(i => !i[property]);
     const newValue = anyFalse;
-    for (const item of selectedItems) {
-      await saveLibraryItem({ ...item, [property]: newValue });
-    }
-    onRefresh();
+
+    // Trigger Optimistic Update (Instant UI, Background Sync)
+    await performUpdate(
+      serverItems,
+      setServerItems,
+      selectedIds,
+      (item) => ({ ...item, [property]: newValue }),
+      async (updatedItem) => {
+        return await saveLibraryItem(updatedItem);
+      },
+      (err) => {
+        showXeenapsAlert({
+          icon: 'error',
+          title: 'SYNC FAILED',
+          text: 'Background update failed. Local state has been rolled back.'
+        });
+      }
+    );
   };
 
   const formatDateTime = (dateStr: string) => {

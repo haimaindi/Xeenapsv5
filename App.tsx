@@ -31,20 +31,31 @@ const App: React.FC = () => {
     loadData();
   }, [loadData]);
 
-  // Fix: iOS Stability Handler
-  // Ensures sidebar closes when user returns to app from an external link 
-  // to prevent the "stuck/expanded" visual glitch common in WebKit/iOS.
+  // Enhanced Fix: iOS Stability Handler
+  // Uses focus, blur, visibilitychange, and pageshow for maximum reliability on iOS/WebKit.
+  // This ensures the sidebar is forced to a closed state whenever the app loses focus (navigation start)
+  // or gains it back (navigation return), preventing "stuck" UI layers.
   useEffect(() => {
+    const forceCloseSidebar = () => {
+      setIsMobileSidebarOpen(false);
+    };
+
     const handleReentry = () => {
       if (document.visibilityState === 'visible') {
-        setIsMobileSidebarOpen(false);
+        forceCloseSidebar();
       }
     };
+
     window.addEventListener('visibilitychange', handleReentry);
     window.addEventListener('pageshow', handleReentry);
+    window.addEventListener('focus', handleReentry);
+    window.addEventListener('blur', forceCloseSidebar); // Force state reset on exit
+    
     return () => {
       window.removeEventListener('visibilitychange', handleReentry);
       window.removeEventListener('pageshow', handleReentry);
+      window.removeEventListener('focus', handleReentry);
+      window.removeEventListener('blur', forceCloseSidebar);
     };
   }, []);
 

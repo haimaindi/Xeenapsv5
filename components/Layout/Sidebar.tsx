@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 // @ts-ignore - Resolving TS error for missing exported members
 import { NavLink, useLocation } from 'react-router-dom';
@@ -39,37 +40,42 @@ const Sidebar: React.FC<SidebarProps> = ({ isMobileOpen, onMobileClose }) => {
 
   const handleExploreClick = async () => {
     const spreadsheetUrl = SPREADSHEET_CONFIG.EXPLORE_MAINDI_CSV;
-    if (onMobileClose) onMobileClose(); // Close sidebar first
     
-    // PWA Fix: Open window immediately to preserve user gesture context before the async fetch
+    // UI Feedback: Close sidebar first and let React process the update
+    if (onMobileClose) onMobileClose(); 
+    
+    // PWA/iOS Fix: Open window immediately to preserve user gesture context
     const newWindow = window.open('about:blank', '_blank');
     
-    try {
-      const response = await fetch(spreadsheetUrl);
-      if (!response.ok) throw new Error('Network response was not ok');
-      const csvData = await response.text();
-      const firstLine = csvData.split('\n')[0];
-      const targetLink = firstLine.split(',')[0].replace(/"/g, '').trim();
-      
-      const finalLink = (targetLink && targetLink.startsWith('http')) 
-        ? targetLink 
-        : SPREADSHEET_CONFIG.EXPLORE_MAINDI_FALLBACK;
-      
-      if (newWindow) {
-        newWindow.location.href = finalLink;
-      } else {
-        // Fallback for browsers that block the above
-        window.open(finalLink, '_blank', 'noopener,noreferrer');
+    // Wrap the async fetch in a micro-task to allow the sidebar closure animation to start
+    // before the browser context is potentially suspended by iOS for the new tab.
+    setTimeout(async () => {
+      try {
+        const response = await fetch(spreadsheetUrl);
+        if (!response.ok) throw new Error('Network response was not ok');
+        const csvData = await response.text();
+        const firstLine = csvData.split('\n')[0];
+        const targetLink = firstLine.split(',')[0].replace(/"/g, '').trim();
+        
+        const finalLink = (targetLink && targetLink.startsWith('http')) 
+          ? targetLink 
+          : SPREADSHEET_CONFIG.EXPLORE_MAINDI_FALLBACK;
+        
+        if (newWindow) {
+          newWindow.location.href = finalLink;
+        } else {
+          window.open(finalLink, '_blank', 'noopener,noreferrer');
+        }
+      } catch (e) {
+        console.error('Failed to fetch link from A1:', e);
+        const fallback = SPREADSHEET_CONFIG.EXPLORE_MAINDI_FALLBACK;
+        if (newWindow) {
+          newWindow.location.href = fallback;
+        } else {
+          window.open(fallback, '_blank', 'noopener,noreferrer');
+        }
       }
-    } catch (e) {
-      console.error('Failed to fetch link from A1:', e);
-      const fallback = SPREADSHEET_CONFIG.EXPLORE_MAINDI_FALLBACK;
-      if (newWindow) {
-        newWindow.location.href = fallback;
-      } else {
-        window.open(fallback, '_blank', 'noopener,noreferrer');
-      }
-    }
+    }, 0);
   };
 
   const handleNavClick = () => {

@@ -2,6 +2,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 // @ts-ignore
 import { useNavigate, useLocation } from 'react-router-dom';
+import { createPortal } from 'react-dom';
 import { LibraryItem, LibraryType } from '../../types';
 import { deleteLibraryItem, saveLibraryItem, fetchLibraryPaginated } from '../../services/gasService';
 import { useAsyncWorkflow } from '../../hooks/useAsyncWorkflow';
@@ -49,8 +50,9 @@ import LibraryDetailView from './LibraryDetailView';
 
 /**
  * Custom Tooltip Component for truncated text
- * Implements "Overlay Expansion": The tooltip appears exactly over the original text.
- * Fixed: Zero-offset positioning and matched styling for pixel-perfect overlay.
+ * Implements "Overlay Expansion" using React Portal.
+ * This ensures the tooltip is rendered at the body level, bypassing table stacking contexts
+ * and appearing above frozen columns (z-index: 10000).
  */
 const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode; isTitle?: boolean }> = ({ text, children, isTitle }) => {
   const [show, setShow] = useState(false);
@@ -62,19 +64,21 @@ const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode; isTitl
       const rect = anchorRef.current.getBoundingClientRect();
       const screenWidth = window.innerWidth;
       
-      // Expansion width
-      const expandWidth = Math.max(rect.width + 40, 380);
+      // Calculate expansion width
+      const expandWidth = Math.max(rect.width + 48, 420);
       
-      let finalLeft = rect.left;
+      // Alignment logic: Center the expansion over the anchor if possible, or shift to fit screen
+      let finalLeft = rect.left - 24; 
       if (finalLeft + expandWidth > screenWidth - 20) {
         finalLeft = screenWidth - expandWidth - 20;
       }
+      if (finalLeft < 10) finalLeft = 10;
 
       setPos({
-        top: rect.top,
-        left: Math.max(10, finalLeft),
+        top: rect.top - 12, // Offset slightly up to wrap the content nicely
+        left: finalLeft,
         width: expandWidth,
-        height: rect.height
+        height: rect.height + 24
       });
       setShow(true);
     }
@@ -90,25 +94,27 @@ const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode; isTitl
       onMouseLeave={() => setShow(false)}
     >
       {children}
-      {show && (
+      {show && createPortal(
         <div 
-          className="fixed z-[10000] pointer-events-none glass rounded-2xl border border-[#004A74]/40 shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
+          className="fixed z-[10000] pointer-events-none glass rounded-[2rem] border border-[#004A74]/30 shadow-[0_25px_50px_-12px_rgba(0,0,0,0.25)] animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
           style={{ 
             left: `${pos.left}px`, 
             top: `${pos.top}px`,
             width: `${pos.width}px`,
-            maxWidth: '600px',
+            maxWidth: '650px',
             minHeight: `${pos.height}px`
           }}
         >
-          {/* Internal padding strictly matches the vertical alignment of the table cell content */}
-          <div className="p-4 flex items-start gap-3">
-            <InformationCircleIcon className="w-4 h-4 text-[#004A74] mt-0.5 shrink-0" />
-            <p className={`text-[#004A74] leading-snug break-words whitespace-normal ${isTitle ? 'text-sm font-bold' : 'text-xs font-medium italic'}`}>
+          <div className="p-6 flex items-start gap-4">
+            <div className="shrink-0 mt-1 bg-[#004A74]/10 p-1.5 rounded-lg">
+              <InformationCircleIcon className="w-4 h-4 text-[#004A74]" />
+            </div>
+            <p className={`text-[#004A74] leading-relaxed break-words whitespace-normal ${isTitle ? 'text-sm font-bold' : 'text-xs font-medium italic'}`}>
               {text}
             </p>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );

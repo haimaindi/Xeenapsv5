@@ -144,6 +144,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     labels: [] as string[],
     url: '',
     fileId: '',
+    imageView: '',
     inTextHarvard: '',
     bibHarvard: '',
     chunks: [] as string[]
@@ -175,19 +176,27 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     return chunks;
   };
 
-  const runExtractionWorkflow = async (extractedText: string, chunks: string[], detectedDoi?: string) => {
+  const runExtractionWorkflow = async (extractedText: string, chunks: string[], identifiers: { doi?: string, isbn?: string, pmid?: string, arxivId?: string, imageView?: string } = {}) => {
     let baseData: Partial<LibraryItem> = { ...formData };
     delete (baseData as any).chunks;
 
-    if (detectedDoi) {
+    const mainId = identifiers.doi || identifiers.isbn || identifiers.pmid || identifiers.arxivId;
+
+    if (mainId) {
       setExtractionStage('FETCHING_ID');
       try {
-        const officialData = await callIdentifierSearch(detectedDoi);
+        const officialData = await callIdentifierSearch(mainId);
         if (officialData) {
           baseData = { ...baseData, ...officialData };
           setFormData(prev => ({ ...prev, ...officialData }));
         }
       } catch (e) {}
+    }
+
+    // Handle ImageView from Drive Link
+    if (identifiers.imageView) {
+      setFormData(prev => ({ ...prev, imageView: identifiers.imageView }));
+      baseData.imageView = identifiers.imageView;
     }
 
     setExtractionStage('AI_ANALYSIS');
@@ -205,6 +214,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
   useEffect(() => {
     const handleUrlExtraction = async () => {
       const url = formData.url.trim();
+      // Exclude YouTube from identifier workflow (it has its own extraction method in backend)
+      const isYoutube = url.includes('youtube.com') || url.includes('youtu.be');
+
       if (url && url.startsWith('http') && url !== lastExtractedUrl.current && formData.addMethod === 'LINK') {
         lastExtractedUrl.current = url;
         setExtractionStage('READING');
@@ -215,7 +227,22 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
           });
           const data = await res.json();
           if (data.status === 'success' && data.extractedText) {
-            await runExtractionWorkflow(data.extractedText, chunkifyText(data.extractedText), data.detectedDoi);
+            if (isYoutube) {
+              // YouTube specific extraction (Simple AI Enrichment)
+              setExtractionStage('AI_ANALYSIS');
+              const aiEnriched = await extractMetadataWithAI(data.extractedText, formData);
+              setFormData(prev => ({ ...prev, ...aiEnriched, chunks: chunkifyText(data.extractedText) }));
+            } else {
+              // Regular LINK workflow (Websites/Drive) synced with FILE workflow
+              const ids = { 
+                doi: data.detectedDoi, 
+                isbn: data.detectedIsbn, 
+                pmid: data.detectedPmid, 
+                arxivId: data.detectedArxiv,
+                imageView: data.imageView 
+              };
+              await runExtractionWorkflow(data.extractedText, chunkifyText(data.extractedText), ids);
+            }
           }
         } catch (err: any) {
           showXeenapsAlert({ icon: 'warning', title: 'EXTRACTION FAILED', text: 'This link can not be extracted automatically.' });
@@ -284,7 +311,13 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         });
         const result = await response.json();
         if (result.status === 'success' && result.extractedText) {
-          await runExtractionWorkflow(result.extractedText, chunkifyText(result.extractedText), result.detectedDoi);
+          const ids = { 
+            doi: result.detectedDoi, 
+            isbn: result.detectedIsbn, 
+            pmid: result.detectedPmid, 
+            arxivId: result.detectedArxiv 
+          };
+          await runExtractionWorkflow(result.extractedText, chunkifyText(result.extractedText), ids);
         }
       } catch (err: any) {
         showXeenapsAlert({ icon: 'warning', title: 'File Error', text: err.message || 'Extraction failed.' });

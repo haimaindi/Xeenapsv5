@@ -1,3 +1,4 @@
+
 /**
  * XEENAPS PKM - MAIN ROUTER
  */
@@ -64,9 +65,20 @@ function doPost(e) {
     if (action === 'extractOnly') {
       let extractedText = "";
       let fileName = body.fileName || "Extracted Content";
+      let imageView = null;
       
       try {
         if (body.url) {
+          const driveId = getFileIdFromUrl(body.url);
+          // Check for Drive Image specifically for imageView
+          if (driveId && (body.url.includes('drive.google.com') || body.url.includes('docs.google.com'))) {
+            try {
+              const fileMeta = Drive.Files.get(driveId);
+              if (fileMeta.mimeType && fileMeta.mimeType.toLowerCase().includes('image/')) {
+                imageView = 'https://lh3.googleusercontent.com/d/' + driveId;
+              }
+            } catch (e) {}
+          }
           extractedText = routerUrlExtraction(body.url);
         } else if (body.fileData) {
           extractedText = handleFileExtraction(body.fileData, body.mimeType, fileName);
@@ -75,15 +87,26 @@ function doPost(e) {
         extractedText = "Extraction failed: " + err.toString();
       }
 
-      // SMART DOI DETECTION for frontend workflow
+      // SMART IDENTIFIER DETECTION for frontend workflow
       const doiPattern = /10\.\d{4,9}\/[-._;()/:A-Z0-9]+/i;
+      const isbnPattern = /(?:ISBN(?:-1[03])?:?\s*)?(?=[0-9X\s-]{10,17}$)(?:97[89][\s-]?)?[0-9]{1,5}[\s-]?[0-9]+[\s-]?[0-9]+[\s-]?[0-9X]/i;
+      const pmidPattern = /PMID:?\s*(\d{4,10})/i;
+      const arxivPattern = /arXiv:?\s*(\d{4}\.\d{4,5}(?:v\d+)?)/i;
+
       const doiMatch = extractedText.match(doiPattern);
+      const isbnMatch = extractedText.match(isbnPattern);
+      const pmidMatch = extractedText.match(pmidPattern);
+      const arxivMatch = extractedText.match(arxivPattern);
 
       return createJsonResponse({ 
         status: 'success', 
         extractedText: extractedText,
         fileName: fileName,
-        detectedDoi: doiMatch ? doiMatch[0] : null
+        detectedDoi: doiMatch ? doiMatch[0] : null,
+        detectedIsbn: isbnMatch ? isbnMatch[0] : null,
+        detectedPmid: pmidMatch ? (pmidMatch[1] || pmidMatch[0]) : null,
+        detectedArxiv: arxivMatch ? (arxivMatch[1] || arxivMatch[0]) : null,
+        imageView: imageView
       });
     }
 

@@ -51,6 +51,7 @@ import { TableSkeletonRows, CardGridSkeleton } from '../Common/LoadingComponents
 import LibraryDetailView from './LibraryDetailView';
 import { showXeenapsAlert } from '../../utils/swalUtils';
 import { showXeenapsDeleteConfirm } from '../../utils/confirmUtils';
+import { showXeenapsToast } from '../../utils/toastUtils';
 
 /**
  * Custom Tooltip Component for truncated text
@@ -269,6 +270,9 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
         });
       }
     );
+
+    // 4. Success Toast Notification
+    showXeenapsToast('success', 'Bulk deletion processed successfully');
   };
 
   /**
@@ -510,6 +514,13 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
       <div className="lg:hidden flex-none pb-10">
         {isInternalLoading ? (
           <CardGridSkeleton count={6} />
+        ) : serverItems.length === 0 ? (
+          <div className="py-24 text-center flex flex-col items-center justify-center space-y-2 bg-white border border-gray-100/50 rounded-[2rem] shadow-sm mx-1">
+            <div className="p-4 bg-gray-50 rounded-full">
+              <PlusIcon className="w-8 h-8 text-gray-300" />
+            </div>
+            <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No Collection Found</p>
+          </div>
         ) : (
           <StandardGridContainer>
             {serverItems.map((item) => (

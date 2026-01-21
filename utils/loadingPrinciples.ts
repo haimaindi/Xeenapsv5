@@ -8,9 +8,9 @@ export const LOADING_CONFIG = {
   // Animation duration in seconds (shimmer effect)
   SHIMMER_DURATION: '1.5s',
   
-  // Base colors for skeletons
-  SKELETON_BG: '#f0f0f0',
-  SKELETON_SHIMMER: '#f8f8f8',
+  // Base colors for skeletons - Using Brand Identity
+  SKELETON_BG: '#004A74',
+  SKELETON_SHIMMER: '#FED400',
   
   // Threshold in ms: If data takes less than this, maybe don't show skeleton to avoid flickering
   // Use with caution in components

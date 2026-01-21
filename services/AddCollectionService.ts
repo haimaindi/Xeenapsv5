@@ -33,7 +33,7 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
        - KEYWORDS: You MUST provide EXACTLY 5 relevant keywords.
        - LABELS: You MUST provide EXACTLY 3 thematic labels.
        - TOPIC & SUBTOPIC: You MUST determine a high-level Topic and a specific Sub-Topic.
-       - CATEGORY: You MUST choose ONLY ONE category from the APPROVED LIST provided below.
+       - CATEGORY: You HAVE TO choose ONLY ONE category from the APPROVED LIST provided below that BEST SUIT based on data that is given to you.
     4. YOUTUBE SPECIAL HANDLING (CRITICAL):
        - If the TEXT SNIPPET contains "YOUTUBE_METADATA:", you MUST:
          * Set "publisher" to "Youtube" verbatim.
@@ -45,7 +45,7 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
        - DO NOT SUMMARIZE OR PARAPHRASE.
        - FORMATTING: Use <b> tag for sub-headers and <br/> for line breaks.
        - EMPHASIS: Use <b><i> tags for key findings.
-    6. CITATION GENERATION: Harvard (Parenthetical) style.
+    6. CITATION GENERATION: Accuratelu user Harvard style.
     7. STRICT RESTRICTION: DO NOT fill "summary", "strength", "weakness", "researchMethodology", "unfamiliarTerminology", "supportingReferences", "videoRecommendation", or "quickTipsForYou".
     --------------------------
 
@@ -73,13 +73,13 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
       "volume": "Vol",
       "issue": "No",
       "pages": "pp-pp",
-      "category": "Must be from the Approved List",
+      "category": "Must be from the Approved List and best suit based on data that is given to you",
       "topic": "General Topic",
       "subTopic": "Specific Sub-Topic",
       "abstract": "HTML formatted verbatim abstract",
       "keywords": ["tag1", "tag2", "tag3", "tag4", "tag5"],
       "labels": ["label1", "label2", "label3"],
-      "inTextHarvard": "Generate a parenthetical Harvard in-text citation. For 1-2 authors, list all names (e.g., 'Author1 & Author2, 2024'). For 3 or more authors, use 'et al.' after the first author (e.g., 'Author1 et al., 2024'). Ensure no italics for 'et al.' unless specified.",
+      "inTextHarvard": "Generate a parenthetical Harvard in-text citation. For 1-2 authors, list all names (e.g., '(Author1 & Author2, 2024)'). For 3 or more authors, use 'et al.' after the first author (e.g., '(Author1 et al., 2024)'). Ensure no italics for 'et al.' unless specified.",
       "bibHarvard": "Generate a full Harvard bibliographic entry. List ALL authors regardless of the count (up to 20 authors). Format: 'Surname, Initial., Surname, Initial. and Surname, Initial. (Year) Title of article. Journal Name, Volume(Issue), pp. pages. DOI link.'"
     }`;
 

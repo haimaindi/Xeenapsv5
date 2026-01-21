@@ -37,26 +37,30 @@ export const fetchLibrary = async (): Promise<LibraryItem[]> => {
 };
 
 /**
- * Server-side Paginated Fetch
+ * Server-side Paginated Fetch with AbortSignal
  */
 export const fetchLibraryPaginated = async (
   page: number = 1, 
   limit: number = 25, 
   search: string = "", 
   type: string = "All",
-  path: string = ""
+  path: string = "",
+  signal?: AbortSignal
 ): Promise<{ items: LibraryItem[], totalCount: number }> => {
   try {
     if (!GAS_WEB_APP_URL) return { items: [], totalCount: 0 };
     const url = `${GAS_WEB_APP_URL}?action=getLibrary&page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&type=${encodeURIComponent(type)}&path=${encodeURIComponent(path)}`;
-    const response = await fetch(url);
+    const response = await fetch(url, { signal });
     if (!response.ok) return { items: [], totalCount: 0 };
     const result: any = await response.json();
     return { 
       items: result.data || [], 
       totalCount: result.totalCount || 0 
     };
-  } catch (error) {
+  } catch (error: any) {
+    if (error.name === 'AbortError') {
+      console.log('Fetch aborted');
+    }
     return { items: [], totalCount: 0 };
   }
 };

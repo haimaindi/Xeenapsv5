@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { LibraryItem, LibraryType } from '../../types';
 import { deleteLibraryItem, saveLibraryItem, fetchLibraryPaginated } from '../../services/gasService';
+import { useAsyncWorkflow } from '../../hooks/useAsyncWorkflow';
 import { 
   TrashIcon, 
   BookmarkIcon, 
@@ -100,12 +101,16 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
   const navigate = useNavigate();
   const location = useLocation();
   
+  // AbortController workflow manager
+  const workflow = useAsyncWorkflow(30000);
+  
   // Server-Side States
   const [serverItems, setServerItems] = useState<LibraryItem[]>([]);
   const [totalItemsServer, setTotalItemsServer] = useState(0);
   const [isInternalLoading, setIsInternalLoading] = useState(false);
   
   const [localSearch, setLocalSearch] = useState('');
+  const [appliedSearch, setAppliedSearch] = useState('');
   const [activeFilter, setActiveFilter] = useState<'All' | LibraryType>('All');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -122,23 +127,44 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
 
   const itemsPerPage = isMobile ? 20 : 25;
   const filters: ('All' | LibraryType)[] = ['All', LibraryType.LITERATURE, LibraryType.TASK, LibraryType.PERSONAL, LibraryType.OTHER];
-  const effectiveSearch = localSearch || globalSearch;
-
-  // Fetch from server on change
+  
+  // Sync initial global search if any
   useEffect(() => {
-    const loadServerData = async () => {
-      setIsInternalLoading(true);
-      const pathPart = location.pathname.substring(1); // 'favorite', 'bookmark', etc
-      const result = await fetchLibraryPaginated(currentPage, itemsPerPage, effectiveSearch, activeFilter, pathPart);
-      setServerItems(result.items);
-      setTotalItemsServer(result.totalCount);
-      setIsInternalLoading(false);
-    };
+    if (globalSearch && !appliedSearch) {
+      setLocalSearch(globalSearch);
+      setAppliedSearch(globalSearch);
+    }
+  }, [globalSearch]);
 
-    // Debounce search
-    const timer = setTimeout(loadServerData, localSearch ? 500 : 0);
-    return () => clearTimeout(timer);
-  }, [currentPage, effectiveSearch, activeFilter, location.pathname, onRefresh]);
+  // Unified Fetch Data with AbortController support
+  useEffect(() => {
+    workflow.execute(
+      async (signal) => {
+        setIsInternalLoading(true);
+        const pathPart = location.pathname.substring(1); // 'favorite', 'bookmark', etc
+        const result = await fetchLibraryPaginated(
+          currentPage, 
+          itemsPerPage, 
+          appliedSearch, 
+          activeFilter, 
+          pathPart,
+          signal
+        );
+        setServerItems(result.items);
+        setTotalItemsServer(result.totalCount);
+      },
+      () => setIsInternalLoading(false),
+      (err) => {
+        setIsInternalLoading(false);
+        // Error is handled by useAsyncWorkflow (e.g., ignoring manual aborts)
+      }
+    );
+  }, [currentPage, appliedSearch, activeFilter, location.pathname, itemsPerPage, onRefresh]);
+
+  const handleSearchTrigger = () => {
+    setAppliedSearch(localSearch);
+    setCurrentPage(1); // Reset to first page on new search
+  };
 
   const handleSort = (key: keyof LibraryItem) => {
     let direction: 'asc' | 'desc' | null = 'asc';
@@ -156,9 +182,6 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
     return <ArrowsUpDownIcon className="w-3 h-3 text-gray-300" />;
   };
 
-  // Sorting is now handled locally for the 25 items, 
-  // but if needed fully server-side, it should be sent as param.
-  // For now, sorting the current 25 items for better UI response:
   const sortedItems = useMemo(() => {
     if (sortConfig.key === 'none' || !sortConfig.direction) return serverItems;
     return [...serverItems].sort((a, b) => {
@@ -260,14 +283,24 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
       )}
 
       <div className="flex flex-col lg:flex-row gap-4 items-center justify-between shrink-0">
-        <SmartSearchBox value={localSearch} onChange={(val) => { setLocalSearch(val); setCurrentPage(1); }} />
+        <SmartSearchBox 
+          value={localSearch} 
+          onChange={setLocalSearch} 
+          onSearch={handleSearchTrigger}
+        />
         <AddButton onClick={() => navigate('/add')} icon={<PlusIcon className="w-5 h-5" />}>Add Collection</AddButton>
       </div>
 
       <div className="flex items-center justify-between lg:justify-start gap-4 shrink-0 relative z-[30]">
         <div className="flex flex-nowrap items-center gap-2 overflow-x-auto pb-2 no-scrollbar flex-1">
           {filters.map(filter => (
-            <StandardFilterButton key={filter} isActive={activeFilter === filter} onClick={() => { setActiveFilter(filter); setCurrentPage(1); }}>{filter}</StandardFilterButton>
+            <StandardFilterButton 
+              key={filter} 
+              isActive={activeFilter === filter} 
+              onClick={() => { setActiveFilter(filter); setCurrentPage(1); }}
+            >
+              {filter}
+            </StandardFilterButton>
           ))}
         </div>
         

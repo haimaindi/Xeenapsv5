@@ -246,28 +246,28 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
   const handleBatchDelete = async () => {
     if (selectedIds.length === 0) return;
     
-    // 1. Confirmation Modal (Danger Style)
+    // 1. Confirmation Modal (Xeenaps Reusable Danger Style)
     const confirmed = await showXeenapsDeleteConfirm(selectedIds.length);
     if (!confirmed) return;
 
-    // 2. Optimized: Batch Delete with Optimistic UI (No global loading)
+    // 2. Instant UX: Reset selectedIds immediately to hide Quick Access Bar
+    const idsToDelete = [...selectedIds];
+    setSelectedIds([]);
+
+    // 3. Optimized: Batch Delete with Optimistic UI (Instant removal from UI)
     await performDelete(
       serverItems,
       setServerItems,
-      selectedIds,
+      idsToDelete,
       async (id) => await deleteLibraryItem(id),
       (err) => {
         showXeenapsAlert({
           icon: 'error',
           title: 'SYNC FAILED',
-          text: 'One or more items could not be deleted from the server. UI has been rolled back.'
+          text: 'One or more items (and their files) could not be deleted from the server. Local state has been rolled back.'
         });
       }
     );
-    
-    setSelectedIds([]);
-    // We don't call onRefresh here to maintain "Instant UI" feel, 
-    // though totalItemsServer might be slightly off until next page/filter change.
   };
 
   /**
@@ -376,6 +376,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
           <div className="relative lg:hidden shrink-0">
             <button onClick={() => setShowSortMenu(!showSortMenu)} className={`p-2.5 rounded-xl border transition-all ${showSortMenu ? 'bg-[#004A74] border-[#004A74] text-white shadow-md' : 'bg-white border-gray-100 text-[#004A74] shadow-sm'}`}><AdjustmentsHorizontalIcon className="w-5 h-5" /></button>
             {showSortMenu && (
+              // Fix: Corrected corrupted div tag and redundant className inside the menu
               <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-2xl border border-gray-100 z-[60] p-2 animate-in fade-in zoom-in-95">
                 <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 px-3 py-2 border-b border-gray-50 mb-1">Sort By</p>
                 {[

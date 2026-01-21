@@ -31,13 +31,6 @@ function setupDatabase() {
 
 /**
  * Optimized for 100,000+ rows with Server-Side Global Sorting
- * @param {number} page
- * @param {number} limit
- * @param {string} search
- * @param {string} typeFilter
- * @param {string} pathFilter (favorite/bookmark)
- * @param {string} sortKey
- * @param {string} sortDir
  */
 function getPaginatedItems(ssId, sheetName, page = 1, limit = 25, search = "", typeFilter = "All", pathFilter = "", sortKey = "createdAt", sortDir = "desc") {
   try {
@@ -50,12 +43,10 @@ function getPaginatedItems(ssId, sheetName, page = 1, limit = 25, search = "", t
     
     const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     const sortIdx = headers.indexOf(sortKey);
-    const createdAtIdx = headers.indexOf('createdAt');
     
     let items = [];
     let totalFilteredCount = 0;
 
-    // Jika tidak ada filter, tidak ada search, dan urutan Newest-First (Optimasi Cepat)
     if (!search && typeFilter === "All" && !pathFilter && sortKey === "createdAt" && sortDir === "desc") {
       totalFilteredCount = lastRow - 1;
       const startRow = Math.max(2, lastRow - (page * limit) + 1);
@@ -76,7 +67,6 @@ function getPaginatedItems(ssId, sheetName, page = 1, limit = 25, search = "", t
         });
       }
     } else {
-      // Logic Pencarian & Global Sorting
       const allValues = sheet.getDataRange().getValues();
       const rawData = allValues.slice(1);
       
@@ -84,9 +74,7 @@ function getPaginatedItems(ssId, sheetName, page = 1, limit = 25, search = "", t
         const itemObj = {};
         headers.forEach((h, i) => itemObj[h] = row[i]);
         
-        // Search across all specified columns (including extraction info 1-10)
         const matchesSearch = !search || headers.some((h, i) => String(row[i]).toLowerCase().includes(search.toLowerCase()));
-        
         const matchesType = typeFilter === "All" || itemObj.type === typeFilter;
         const matchesPath = (!pathFilter) || 
                           (pathFilter === "favorite" && (itemObj.isFavorite === true || itemObj.isFavorite === 'true')) || 
@@ -98,25 +86,17 @@ function getPaginatedItems(ssId, sheetName, page = 1, limit = 25, search = "", t
       
       totalFilteredCount = filtered.length;
       
-      // Global Server-Side Sort
       if (sortIdx !== -1) {
         filtered.sort((a, b) => {
           let valA = a[sortIdx];
           let valB = b[sortIdx];
-          
-          // Improved Date Handling for CreatedAt
           if (sortKey === 'createdAt') {
             const timeA = valA ? new Date(valA).getTime() : 0;
             const timeB = valB ? new Date(valB).getTime() : 0;
-            const dA = isNaN(timeA) ? 0 : timeA;
-            const dB = isNaN(timeB) ? 0 : timeB;
-            return sortDir === 'asc' ? dA - dB : dB - dA;
+            return sortDir === 'asc' ? timeA - timeB : timeB - timeA;
           }
-          
-          // Case-insensitive string sort
           valA = String(valA).toLowerCase();
           valB = String(valB).toLowerCase();
-          
           if (valA < valB) return sortDir === 'asc' ? -1 : 1;
           if (valA > valB) return sortDir === 'asc' ? 1 : -1;
           return 0;
@@ -156,7 +136,6 @@ function saveToSheet(ssId, sheetName, item) {
     return (Array.isArray(val) || (typeof val === 'object' && val !== null)) ? JSON.stringify(val) : (val !== undefined ? val : '');
   });
 
-  // UPSERT LOGIC: Find existing ID
   const lastRow = sheet.getLastRow();
   let existingRowIndex = -1;
   
@@ -171,20 +150,37 @@ function saveToSheet(ssId, sheetName, item) {
   }
 
   if (existingRowIndex > -1) {
-    // Update existing row
     sheet.getRange(existingRowIndex, 1, 1, rowData.length).setValues([rowData]);
   } else {
-    // Append new row
     sheet.appendRow(rowData);
   }
 }
 
+/**
+ * Updated deleteFromSheet with permanent file deletion logic
+ */
 function deleteFromSheet(ssId, sheetName, id) {
   const ss = SpreadsheetApp.openById(ssId);
   const sheet = ss.getSheetByName(sheetName);
   if (!sheet) return;
   const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  const idIdx = headers.indexOf('id');
+  const fileIdIdx = headers.indexOf('fileId');
+
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === id) { sheet.deleteRow(i + 1); break; }
+    if (data[i][idIdx] === id) {
+      // 1. Get fileId from the row before deleting it
+      const fileId = data[i][fileIdIdx];
+      
+      // 2. Hard delete the file from Drive if it exists
+      if (fileId && String(fileId).trim() !== "") {
+        permanentlyDeleteFile(fileId);
+      }
+      
+      // 3. Remove the row from the sheet
+      sheet.deleteRow(i + 1);
+      break;
+    }
   }
 }

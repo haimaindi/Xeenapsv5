@@ -54,15 +54,15 @@ export const SmartSearchBox: React.FC<SmartSearchBoxProps> = ({
         charIndex++;
       }
 
-      let typeSpeed = isDeleting ? 50 : 100;
+      let typeSpeed = isDeleting ? 25 : 50;
 
       if (!isDeleting && charIndex === currentPhrase.length) {
         isDeleting = true;
-        typeSpeed = 2000; // Pause at end of phrase
+        typeSpeed = 500; // Pause at end of phrase
       } else if (isDeleting && charIndex === 0) {
         isDeleting = false;
         phraseIndex = (phraseIndex + 1) % phrases.length;
-        typeSpeed = 500; // Pause before starting new phrase
+        typeSpeed = 100; // Pause before starting new phrase
       }
 
       timeoutId = window.setTimeout(type, typeSpeed);

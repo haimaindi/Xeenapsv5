@@ -17,7 +17,8 @@ import {
   EyeIcon,
   DocumentIcon,
   LinkIcon,
-  CheckCircleIcon
+  CheckCircleIcon,
+  InformationCircleIcon
 } from '@heroicons/react/24/outline';
 import { 
   BookmarkIcon as BookmarkSolid, 
@@ -44,6 +45,44 @@ import {
   StandardFilterButton 
 } from '../Common/ButtonComponents';
 import LibraryDetailView from './LibraryDetailView';
+
+/**
+ * Custom Tooltip Component for truncated text
+ */
+const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode }> = ({ text, children }) => {
+  const [show, setShow] = useState(false);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    setPos({ x: e.clientX + 15, y: e.clientY + 15 });
+  };
+
+  if (!text || text === '-' || text === 'N/A') return <>{children}</>;
+
+  return (
+    <div 
+      className="relative"
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+      onMouseMove={handleMouseMove}
+    >
+      {children}
+      {show && (
+        <div 
+          className="fixed z-[9999] pointer-events-none max-w-xs md:max-w-md p-4 glass rounded-2xl border border-white/50 shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+          style={{ left: pos.x, top: pos.y }}
+        >
+          <div className="flex items-start gap-2">
+            <InformationCircleIcon className="w-4 h-4 text-[#004A74] mt-0.5 shrink-0" />
+            <p className="text-xs font-bold text-[#004A74] leading-relaxed break-words">
+              {text}
+            </p>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface LibraryMainProps {
   items: LibraryItem[];
@@ -98,9 +137,15 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items, isLoading, onRefresh, 
   const filteredAndSortedItems = useMemo(() => {
     let result = items.filter(item => {
       const query = effectiveSearch.toLowerCase();
-      const matchesSearch = !query || Object.values(item).some(val => {
+      
+      // DEEP SEARCH: Checks all 40+ columns including strings, arrays, and nested data
+      const matchesSearch = !query || Object.entries(item).some(([key, val]) => {
+        // Skip purely internal non-text fields if any
+        if (key === 'id' || key === 'fileId' || key === 'youtubeId') return false;
+
         if (typeof val === 'string') return val.toLowerCase().includes(query);
         if (Array.isArray(val)) return val.some(v => typeof v === 'string' && v.toLowerCase().includes(query));
+        if (typeof val === 'boolean') return false;
         return false;
       });
 
@@ -303,38 +348,50 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items, isLoading, onRefresh, 
                     </td>
                     {/* Title Cell: Frozen at left-12 */}
                     <StandardTd isActiveSort={sortConfig.key === 'title'} className="sticky left-12 z-20 border-r border-gray-100/50 bg-white group-hover:bg-[#f0f7fa] shadow-sm">
-                      <div className="flex items-start gap-2 group/title">
-                        <div className="shrink-0 mt-0.5 transition-transform group-hover/title:scale-110">
-                          {item.addMethod === 'FILE' ? (
-                            <DocumentIcon className="w-4 h-4 text-[#004A74]" />
-                          ) : (
-                            <LinkIcon className="w-4 h-4 text-[#560D96]" />
-                          )}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="text-sm font-bold text-[#004A74] line-clamp-2 group-hover/title:underline leading-snug transition-all">
-                              {item.title}
-                            </span>
-                            <div className="flex items-center gap-1 shrink-0">
-                              {item.isBookmarked && <BookmarkSolid className="w-3 h-3 text-[#004A74]" />}
-                              {item.isFavorite && <StarSolid className="w-3 h-3 text-[#FED400]" />}
+                      <ElegantTooltip text={item.title}>
+                        <div className="flex items-start gap-2 group/title">
+                          <div className="shrink-0 mt-0.5 transition-transform group-hover/title:scale-110">
+                            {item.addMethod === 'FILE' ? (
+                              <DocumentIcon className="w-4 h-4 text-[#004A74]" />
+                            ) : (
+                              <LinkIcon className="w-4 h-4 text-[#560D96]" />
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-sm font-bold text-[#004A74] line-clamp-2 group-hover/title:underline leading-snug transition-all">
+                                {item.title}
+                              </span>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {item.isBookmarked && <BookmarkSolid className="w-3 h-3 text-[#004A74]" />}
+                                {item.isFavorite && <StarSolid className="w-3 h-3 text-[#FED400]" />}
+                              </div>
                             </div>
                           </div>
+                          <EyeIcon className="w-3.5 h-3.5 text-gray-300 group-hover/title:text-[#004A74] opacity-0 group-hover/title:opacity-100 transition-all shrink-0 mt-1" />
                         </div>
-                        <EyeIcon className="w-3.5 h-3.5 text-gray-300 group-hover/title:text-[#004A74] opacity-0 group-hover/title:opacity-100 transition-all shrink-0 mt-1" />
-                      </div>
+                      </ElegantTooltip>
                     </StandardTd>
                     <StandardTd isActiveSort={sortConfig.key === 'author'} className="text-xs text-gray-600 italic text-center">
-                      <div className="line-clamp-2">{item.author || '-'}</div>
+                      <ElegantTooltip text={item.author}>
+                        <div className="line-clamp-2">{item.author || '-'}</div>
+                      </ElegantTooltip>
                     </StandardTd>
                     <StandardTd isActiveSort={sortConfig.key === 'publisher'} className="text-xs text-gray-600 text-center">
-                      <div className="line-clamp-2">{item.publisher || '-'}</div>
+                      <ElegantTooltip text={item.publisher}>
+                        <div className="line-clamp-2">{item.publisher || '-'}</div>
+                      </ElegantTooltip>
                     </StandardTd>
                     <StandardTd isActiveSort={sortConfig.key === 'year'} className="text-xs text-gray-600 font-mono text-center">{item.year || '-'}</StandardTd>
-                    <StandardTd isActiveSort={sortConfig.key === 'category'} className="text-xs text-gray-600 text-center">{item.category || '-'}</StandardTd>
-                    <StandardTd isActiveSort={sortConfig.key === 'topic'} className="text-xs text-gray-600 text-center">{item.topic || '-'}</StandardTd>
-                    <StandardTd isActiveSort={sortConfig.key === 'subTopic'} className="text-xs text-gray-600 text-center">{item.subTopic || '-'}</StandardTd>
+                    <StandardTd isActiveSort={sortConfig.key === 'category'} className="text-xs text-gray-600 text-center">
+                      <div className="line-clamp-2">{item.category || '-'}</div>
+                    </StandardTd>
+                    <StandardTd isActiveSort={sortConfig.key === 'topic'} className="text-xs text-gray-600 text-center">
+                      <div className="line-clamp-2">{item.topic || '-'}</div>
+                    </StandardTd>
+                    <StandardTd isActiveSort={sortConfig.key === 'subTopic'} className="text-xs text-gray-600 text-center">
+                      <div className="line-clamp-2">{item.subTopic || '-'}</div>
+                    </StandardTd>
                     <StandardTd isActiveSort={sortConfig.key === 'createdAt'} className="text-xs font-medium text-gray-400 whitespace-nowrap text-center">{formatDateTime(item.createdAt)}</StandardTd>
                   </StandardTr>
                 ))
@@ -361,17 +418,17 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items, isLoading, onRefresh, 
                 >
                   {selectedIds.includes(item.id) && <CheckIcon className="w-3 h-3 stroke-[4]" />}
                 </button>
-                <span className="text-[8px] font-black uppercase tracking-widest bg-[#004A74] text-white px-2 py-0.5 rounded-full">
+                <span className="text-[8px] font-black uppercase tracking-widest bg-[#004A74] text-white px-2 py-0.5 rounded-full line-clamp-2">
                   {item.category || 'GENERAL'}
                 </span>
               </div>
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#004A74] opacity-80">
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#004A74] opacity-80 line-clamp-2">
                   {item.topic || 'NO TOPIC'}
                 </span>
               </div>
               <div className="mt-[-4px] mb-2">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter line-clamp-2">
                   {item.subTopic || 'No Sub Topic'}
                 </span>
               </div>

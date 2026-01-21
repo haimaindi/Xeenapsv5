@@ -360,7 +360,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    Swal.fire({ title: 'Registering Item...', text: 'Ensuring data is saved accurately.', allowOutsideClick: false, didOpen: () => Swal.showLoading(), ...XEENAPS_SWAL_CONFIG });
+    Swal.fire({ title: 'Registering Item...', text: 'Larger files may take a moment longer to process.', allowOutsideClick: false, didOpen: () => Swal.showLoading(), ...XEENAPS_SWAL_CONFIG });
     try {
       let detectedFormat = FileFormat.PDF;
       let fileUploadData = undefined;
@@ -455,7 +455,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
                   <div className="absolute left-4 top-1/2 -translate-y-1/2 flex items-center">
                     {isExtracting ? <ArrowPathIcon className="w-5 h-5 text-[#004A74] animate-spin" /> : <FingerPrintIcon className="w-5 h-5 text-gray-300 group-focus-within:text-[#004A74]" />}
                   </div>
-                  <input className={`w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl focus:ring-2 border ${!formData.doi ? 'border-red-300' : 'border-gray-200'} text-sm font-mono font-bold transition-all`} placeholder="Enter DOI, ISBN, PMID, Bibcode, or Title..." value={formData.doi} onChange={(e) => setFormData({...formData, doi: e.target.value})} disabled={isFormDisabled} />
+                  <input className={`w-full pl-12 pr-4 py-4 bg-gray-50 rounded-2xl focus:ring-2 border ${!formData.doi ? 'border-red-300' : 'border-gray-200'} text-sm font-mono font-bold transition-all`} placeholder="Enter DOI, ISBN, PMID, Arxiv, or Title..." value={formData.doi} onChange={(e) => setFormData({...formData, doi: e.target.value})} disabled={isFormDisabled} />
                 </div>
               </FormField>
             ) : (
@@ -480,9 +480,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
               <div className="flex items-center gap-2 px-2 animate-in fade-in slide-in-from-top-1 duration-300">
                 <SparklesIcon className="w-4 h-4 text-[#FED400] animate-pulse" />
                 <span className="text-[10px] font-black text-[#004A74] uppercase tracking-tighter">
-                  {extractionStage === 'FETCHING_ID' ? 'Fetching Metadata from Global APIs...' : 
-                   extractionStage === 'READING' ? 'Following Link & Reading Content...' : 
-                   extractionStage === 'AI_ANALYSIS' ? 'AI Librarian Analyzing Content...' : 
+                  {extractionStage === 'FETCHING_ID' ? 'Searching for metadata...' : 
+                   extractionStage === 'READING' ? 'Accessing Content...' : 
+                   extractionStage === 'AI_ANALYSIS' ? 'Analyzing Content...' : 
                    extractionStage === 'BYPASS' ? 'Bypassing Protection...' : 'Processing...'}
                 </span>
               </div>
@@ -505,15 +505,15 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             <FormField label="Publisher"><FormDropdown value={formData.publisher} onChange={(v) => setFormData({...formData, publisher: v})} options={existingValues.publishers} placeholder="Publisher name..." disabled={isFormDisabled} /></FormField>
             <FormField label="Journal"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm font-medium" placeholder="Journal name..." value={formData.journalName} onChange={(e) => setFormData({...formData, journalName: e.target.value})} disabled={isFormDisabled} /></FormField>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <FormField label="Volume"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm" placeholder="14" value={formData.volume} onChange={(e) => setFormData({...formData, volume: e.target.value})} disabled={isFormDisabled} /></FormField>
-              <FormField label="Issue"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm" placeholder="2" value={formData.issue} onChange={(e) => setFormData({...formData, issue: e.target.value})} disabled={isFormDisabled} /></FormField>
-              <FormField label="Pages"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm" placeholder="120-135" value={formData.pages} onChange={(e) => setFormData({...formData, pages: e.target.value})} disabled={isFormDisabled} /></FormField>
+              <FormField label="Volume"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm" placeholder="Volume" value={formData.volume} onChange={(e) => setFormData({...formData, volume: e.target.value})} disabled={isFormDisabled} /></FormField>
+              <FormField label="Issue"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm" placeholder="Issue" value={formData.issue} onChange={(e) => setFormData({...formData, issue: e.target.value})} disabled={isFormDisabled} /></FormField>
+              <FormField label="Pages"><input className="w-full px-5 py-4 bg-white rounded-2xl border border-gray-200 text-sm" placeholder="Pages" value={formData.pages} onChange={(e) => setFormData({...formData, pages: e.target.value})} disabled={isFormDisabled} /></FormField>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <FormField label="Year (YYYY)"><input type="number" className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" placeholder="YYYY" value={formData.year} onChange={(e) => setFormData({...formData, year: e.target.value.substring(0, 4)})} disabled={isFormDisabled} /></FormField>
-            <FormField label="Date (Calendar Modal)"><input type="date" className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" value={getHtmlDateValue(formData.fullDate)} onChange={handleDateChange} disabled={isFormDisabled} /></FormField>
+            <FormField label="Year"><input type="number" className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" placeholder="YYYY" value={formData.year} onChange={(e) => setFormData({...formData, year: e.target.value.substring(0, 4)})} disabled={isFormDisabled} /></FormField>
+            <FormField label="Date"><input type="date" className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm font-mono font-bold" value={getHtmlDateValue(formData.fullDate)} onChange={handleDateChange} disabled={isFormDisabled} /></FormField>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 pt-4 border-t border-gray-100">
@@ -531,7 +531,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             <FormField label="Labels"><FormDropdown isMulti multiValues={formData.labels} onAddMulti={(v) => setFormData({...formData, labels: [...formData.labels, v]})} onRemoveMulti={(v) => setFormData({...formData, labels: formData.labels.filter(a => a !== v)})} options={existingValues.allLabels} placeholder="Thematic labels..." value="" onChange={() => {}} disabled={isFormDisabled} /></FormField>
           </div>
 
-          <FormField label="Abstract (Official or AI Enhanced)">
+          <FormField label="Abstract">
             <AbstractEditor 
               value={formData.abstract} 
               onChange={(val) => setFormData({...formData, abstract: val})} 

@@ -23,7 +23,8 @@ const CONFIG = {
       'strength', 'weakness', 'unfamiliarTerminology', 'supportingReferences', 
       'videoRecommendation', 'quickTipsForYou',
       'extractedInfo1', 'extractedInfo2', 'extractedInfo3', 'extractedInfo4', 'extractedInfo5',
-      'extractedInfo6', 'extractedInfo7', 'extractedInfo8', 'extractedInfo9', 'extractedInfo10'
+      'extractedInfo6', 'extractedInfo7', 'extractedInfo8', 'extractedInfo9', 'extractedInfo10',
+      'isFavorite', 'isBookmarked'
     ]
   }
 };

@@ -393,13 +393,6 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                     <StandardTd isActiveSort={sortConfig.key === 'title'} className="sticky left-12 z-20 border-r border-gray-100/50 bg-white group-hover:bg-[#f0f7fa] shadow-sm">
                       <ElegantTooltip text={item.title}>
                         <div className="flex items-start gap-2 group/title w-full">
-                          <div className="shrink-0 mt-0.5 transition-transform group-hover/title:scale-110">
-                            {item.addMethod === 'FILE' ? (
-                              <DocumentIcon className="w-4 h-4 text-[#004A74]" />
-                            ) : (
-                              <LinkIcon className="w-4 h-4 text-[#560D96]" />
-                            )}
-                          </div>
                           <div className="flex-1 min-w-0">
                             <div className="block overflow-hidden" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                               <span className="text-sm font-bold text-[#004A74] group-hover/title:underline leading-tight transition-all">
@@ -489,13 +482,6 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                 </span>
               </div>
               <div className="flex items-start gap-2 mb-3">
-                <div className="shrink-0 mt-1">
-                  {item.addMethod === 'FILE' ? (
-                    <DocumentIcon className="w-3.5 h-3.5 text-[#004A74]" />
-                  ) : (
-                    <LinkIcon className="w-3.5 h-3.5 text-[#560D96]" />
-                  )}
-                </div>
                 <div className="flex-1 min-w-0">
                   <h3 className="text-sm font-bold text-[#004A74] line-clamp-2 leading-tight">
                     {item.title}

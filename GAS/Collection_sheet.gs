@@ -89,8 +89,8 @@ function getPaginatedItems(ssId, sheetName, page = 1, limit = 25, search = "", t
         
         const matchesType = typeFilter === "All" || itemObj.type === typeFilter;
         const matchesPath = (!pathFilter) || 
-                          (pathFilter === "favorite" && itemObj.isFavorite === true) || 
-                          (pathFilter === "bookmark" && itemObj.isBookmarked === true) ||
+                          (pathFilter === "favorite" && (itemObj.isFavorite === true || itemObj.isFavorite === 'true')) || 
+                          (pathFilter === "bookmark" && (itemObj.isBookmarked === true || itemObj.isBookmarked === 'true')) ||
                           (pathFilter === "research" && (itemObj.type === "Literature" || itemObj.type === "Task"));
         
         return matchesSearch && matchesType && matchesPath;
@@ -149,12 +149,34 @@ function saveToSheet(ssId, sheetName, item) {
   const ss = SpreadsheetApp.openById(ssId);
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) { setupDatabase(); sheet = ss.getSheetByName(sheetName); }
+  
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   const rowData = headers.map(h => {
     const val = item[h];
-    return (Array.isArray(val) || (typeof val === 'object' && val !== null)) ? JSON.stringify(val) : (val || '');
+    return (Array.isArray(val) || (typeof val === 'object' && val !== null)) ? JSON.stringify(val) : (val !== undefined ? val : '');
   });
-  sheet.appendRow(rowData);
+
+  // UPSERT LOGIC: Find existing ID
+  const lastRow = sheet.getLastRow();
+  let existingRowIndex = -1;
+  
+  if (lastRow > 1) {
+    const idColumnValues = sheet.getRange(1, 1, lastRow, 1).getValues();
+    for (let i = 1; i < idColumnValues.length; i++) {
+      if (idColumnValues[i][0] === item.id) {
+        existingRowIndex = i + 1;
+        break;
+      }
+    }
+  }
+
+  if (existingRowIndex > -1) {
+    // Update existing row
+    sheet.getRange(existingRowIndex, 1, 1, rowData.length).setValues([rowData]);
+  } else {
+    // Append new row
+    sheet.appendRow(rowData);
+  }
 }
 
 function deleteFromSheet(ssId, sheetName, id) {

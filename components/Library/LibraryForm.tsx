@@ -7,6 +7,7 @@ import { SourceType, FileFormat, LibraryItem, LibraryType, ExtractionResult } fr
 import { saveLibraryItem, uploadAndStoreFile, extractFromUrl, callIdentifierSearch } from '../../services/gasService';
 import { extractMetadataWithAI } from '../../services/AddCollectionService';
 import { GAS_WEB_APP_URL } from '../../constants';
+import { useAsyncWorkflow } from '../../hooks/useAsyncWorkflow';
 import { 
   CheckIcon, 
   LinkIcon, 
@@ -118,6 +119,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
   const lastExtractedUrl = useRef<string>("");
   const lastIdentifier = useRef<string>("");
 
+  // Initialize the workflow hook with 30s timeout
+  const workflow = useAsyncWorkflow(30000);
+
   const CATEGORY_OPTIONS = [
     "Algorithm", "Blog Post", "Book", "Book Chapter", "Business Report", "Case Report", "Case Series", 
     "Checklist", "Checklist Model", "Clinical Guideline", "Conference Paper", "Course Module", "Dataset", 
@@ -195,7 +199,8 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     extractedText: string, 
     chunks: string[], 
     identifiers: { doi?: string, isbn?: string, pmid?: string, arxivId?: string, imageView?: string } = {},
-    initialMetadata: Partial<LibraryItem> = {}
+    initialMetadata: Partial<LibraryItem> = {},
+    signal?: AbortSignal
   ) => {
     let baseData: Partial<LibraryItem> = { ...formData, ...initialMetadata };
     delete (baseData as any).chunks;
@@ -204,7 +209,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       const mainId = identifiers.doi || identifiers.isbn || identifiers.pmid || identifiers.arxivId;
       setExtractionStage('FETCHING_ID');
       try {
-        const officialData = await callIdentifierSearch(mainId!);
+        const officialData = await callIdentifierSearch(mainId!, signal);
         if (officialData) {
           baseData = { ...baseData, ...officialData };
           setFormData(prev => ({ ...prev, ...officialData }));
@@ -218,7 +223,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     }
 
     setExtractionStage('AI_ANALYSIS');
-    const aiEnriched = await extractMetadataWithAI(extractedText, baseData);
+    const aiEnriched = await extractMetadataWithAI(extractedText, baseData, signal);
     
     // YouTube Specific Logic Overrides
     const isYouTube = extractedText.includes("YOUTUBE_METADATA") || (baseData.url && (baseData.url.includes('youtube.com') || baseData.url.includes('youtu.be')));
@@ -245,115 +250,133 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     return blockedDomains.some(pattern => pattern.test(url));
   };
 
+  const handleExtractionError = (err: any) => {
+    setExtractionStage('IDLE');
+    if (err.message === 'TIMEOUT') {
+      showXeenapsAlert({ 
+        icon: 'error', 
+        title: 'PROCESS FAILED', 
+        text: 'The request took too long (max 30s). Please check your link or try again.' 
+      });
+    } else {
+      showXeenapsAlert({ 
+        icon: 'warning', 
+        title: 'EXTRACTION FAILED', 
+        text: 'This operation could not be completed automatically.' 
+      });
+    }
+  };
+
   // URL Extraction Effect
   useEffect(() => {
-    const handleUrlExtraction = async () => {
-      const url = formData.url.trim();
-      if (!url || !url.startsWith('http') || url === lastExtractedUrl.current || formData.addMethod !== 'LINK') return;
+    const url = formData.url.trim();
+    if (!url || !url.startsWith('http') || url === lastExtractedUrl.current || formData.addMethod !== 'LINK') return;
 
-      if (isSocialMediaBlocked(url) && !url.includes('youtube.com') && !url.includes('youtu.be')) {
-        showXeenapsAlert({ icon: 'error', title: 'LINK NON SUPPORTED', text: 'Social media links (except YouTube) are not allowed.' });
-        setFormData(prev => ({ ...prev, url: '' }));
-        return;
-      }
+    if (isSocialMediaBlocked(url) && !url.includes('youtube.com') && !url.includes('youtu.be')) {
+      showXeenapsAlert({ icon: 'error', title: 'LINK NON SUPPORTED', text: 'Social media links (except YouTube) are not allowed.' });
+      setFormData(prev => ({ ...prev, url: '' }));
+      return;
+    }
 
+    const tid = setTimeout(() => {
       lastExtractedUrl.current = url;
-      setExtractionStage('READING');
-      try {
-        const res = await fetch(GAS_WEB_APP_URL, {
-          method: 'POST',
-          body: JSON.stringify({ action: 'extractOnly', url }),
-        });
-        const data = await res.json();
-
-        if (data.status === 'success' && data.extractedText) {
-          const ids = { 
-            doi: data.detectedDoi, 
-            isbn: data.detectedIsbn, 
-            pmid: data.detectedPmid, 
-            arxivId: data.detectedArxiv,
-            imageView: data.imageView 
-          };
-          await runExtractionWorkflow(data.extractedText, chunkifyText(data.extractedText), ids);
-        }
-      } catch (err: any) {
-        showXeenapsAlert({ icon: 'warning', title: 'EXTRACTION FAILED', text: 'This link can not be extracted automatically.' });
-      } finally {
-        setExtractionStage('IDLE');
-      }
-    };
-    const tid = setTimeout(handleUrlExtraction, 1000);
+      workflow.execute(
+        async (signal) => {
+          setExtractionStage('READING');
+          const res = await fetch(GAS_WEB_APP_URL, {
+            method: 'POST',
+            body: JSON.stringify({ action: 'extractOnly', url }),
+            signal
+          });
+          const data = await res.json();
+          if (data.status === 'success' && data.extractedText) {
+            const ids = { 
+              doi: data.detectedDoi, 
+              isbn: data.detectedIsbn, 
+              pmid: data.detectedPmid, 
+              arxivId: data.detectedArxiv,
+              imageView: data.imageView 
+            };
+            await runExtractionWorkflow(data.extractedText, chunkifyText(data.extractedText), ids, {}, signal);
+          }
+        },
+        () => setExtractionStage('IDLE'),
+        handleExtractionError
+      );
+    }, 1000);
+    
     return () => clearTimeout(tid);
-  }, [formData.url, formData.addMethod]);
+  }, [formData.url, formData.addMethod, workflow.execute]);
 
   // REF Workflow Effect
   useEffect(() => {
-    const handleIdentifierSearchLogic = async () => {
-      const idVal = formData.doi.trim(); 
-      if (idVal && idVal !== lastIdentifier.current && formData.addMethod === 'REF') {
+    const idVal = formData.doi.trim(); 
+    if (idVal && idVal !== lastIdentifier.current && formData.addMethod === 'REF') {
+      const tid = setTimeout(() => {
         lastIdentifier.current = idVal;
-        setExtractionStage('FETCHING_ID');
-        try {
-          const data = await callIdentifierSearch(idVal);
-          if (data) {
-            setFormData(prev => ({ ...prev, ...data }));
-            const targetUrl = data.url || (data.doi ? `https://doi.org/${data.doi}` : null);
-            if (targetUrl && targetUrl.startsWith('http')) {
-              setExtractionStage('READING');
-              const scrapeRes = await fetch(GAS_WEB_APP_URL, {
-                method: 'POST',
-                body: JSON.stringify({ action: 'extractOnly', url: targetUrl }),
-              });
-              const scrapeData = await scrapeRes.json();
-              if (scrapeData.status === 'success' && scrapeData.extractedText) {
-                await runExtractionWorkflow(scrapeData.extractedText, chunkifyText(scrapeData.extractedText), {}, data);
+        workflow.execute(
+          async (signal) => {
+            setExtractionStage('FETCHING_ID');
+            const data = await callIdentifierSearch(idVal, signal);
+            if (data) {
+              setFormData(prev => ({ ...prev, ...data }));
+              const targetUrl = data.url || (data.doi ? `https://doi.org/${data.doi}` : null);
+              if (targetUrl && targetUrl.startsWith('http')) {
+                setExtractionStage('READING');
+                const scrapeRes = await fetch(GAS_WEB_APP_URL, {
+                  method: 'POST',
+                  body: JSON.stringify({ action: 'extractOnly', url: targetUrl }),
+                  signal
+                });
+                const scrapeData = await scrapeRes.json();
+                if (scrapeData.status === 'success' && scrapeData.extractedText) {
+                  await runExtractionWorkflow(scrapeData.extractedText, chunkifyText(scrapeData.extractedText), {}, data, signal);
+                } else {
+                  setExtractionStage('AI_ANALYSIS');
+                  const aiEnriched = await extractMetadataWithAI("", data, signal);
+                  setFormData(prev => ({ ...prev, ...aiEnriched }));
+                }
               } else {
                 setExtractionStage('AI_ANALYSIS');
-                const aiEnriched = await extractMetadataWithAI("", data);
+                const aiEnriched = await extractMetadataWithAI("", data, signal);
                 setFormData(prev => ({ ...prev, ...aiEnriched }));
               }
-            } else {
-              setExtractionStage('AI_ANALYSIS');
-              const aiEnriched = await extractMetadataWithAI("", data);
-              setFormData(prev => ({ ...prev, ...aiEnriched }));
             }
-          }
-        } catch (e: any) {
-          showXeenapsAlert({ icon: 'error', title: 'SEARCH FAILED', text: 'No Data Found, please provide a valid identifier.' });
-        } finally {
-          setExtractionStage('IDLE');
-        }
-      }
-    };
-    const tid = setTimeout(handleIdentifierSearchLogic, 1500);
-    return () => clearTimeout(tid);
-  }, [formData.doi, formData.addMethod]);
+          },
+          () => setExtractionStage('IDLE'),
+          handleExtractionError
+        );
+      }, 1500);
+      return () => clearTimeout(tid);
+    }
+  }, [formData.doi, formData.addMethod, workflow.execute]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = e.target.files?.[0];
     if (selectedFile) {
       setFile(selectedFile);
-      setExtractionStage('READING');
-      try {
-        const reader = new FileReader();
-        const base64Data = await new Promise<string>((resolve) => {
-          reader.onload = () => resolve((reader.result as string).split(',')[1]);
-          reader.readAsDataURL(selectedFile);
-        });
-        const response = await fetch(GAS_WEB_APP_URL, { 
-          method: 'POST', 
-          body: JSON.stringify({ action: 'extractOnly', fileData: base64Data, fileName: selectedFile.name, mimeType: selectedFile.type }) 
-        });
-        const result = await response.json();
-        if (result.status === 'success' && result.extractedText) {
-          const ids = { doi: result.detectedDoi, isbn: result.detectedIsbn, pmid: result.detectedPmid, arxivId: result.detectedArxiv };
-          await runExtractionWorkflow(result.extractedText, chunkifyText(result.extractedText), ids);
-        }
-      } catch (err: any) {
-        showXeenapsAlert({ icon: 'warning', title: 'File Error', text: err.message || 'Extraction failed.' });
-      } finally {
-        setExtractionStage('IDLE');
-      }
+      workflow.execute(
+        async (signal) => {
+          setExtractionStage('READING');
+          const reader = new FileReader();
+          const base64Data = await new Promise<string>((resolve) => {
+            reader.onload = () => resolve((reader.result as string).split(',')[1]);
+            reader.readAsDataURL(selectedFile);
+          });
+          const response = await fetch(GAS_WEB_APP_URL, { 
+            method: 'POST', 
+            body: JSON.stringify({ action: 'extractOnly', fileData: base64Data, fileName: selectedFile.name, mimeType: selectedFile.type }),
+            signal
+          });
+          const result = await response.json();
+          if (result.status === 'success' && result.extractedText) {
+            const ids = { doi: result.detectedDoi, isbn: result.detectedIsbn, pmid: result.detectedPmid, arxivId: result.detectedArxiv };
+            await runExtractionWorkflow(result.extractedText, chunkifyText(result.extractedText), ids, {}, signal);
+          }
+        },
+        () => setExtractionStage('IDLE'),
+        handleExtractionError
+      );
     }
   };
 

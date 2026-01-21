@@ -1,3 +1,4 @@
+
 import { LibraryItem, GASResponse, ExtractionResult } from '../types';
 import { GAS_WEB_APP_URL } from '../constants';
 import Swal from 'sweetalert2';
@@ -35,12 +36,13 @@ export const fetchLibrary = async (): Promise<LibraryItem[]> => {
   }
 };
 
-export const callAiProxy = async (provider: 'groq' | 'gemini', prompt: string, modelOverride?: string): Promise<string> => {
+export const callAiProxy = async (provider: 'groq' | 'gemini', prompt: string, modelOverride?: string, signal?: AbortSignal): Promise<string> => {
   try {
     if (!GAS_WEB_APP_URL) throw new Error('GAS_WEB_APP_URL not configured');
     const response = await fetch(GAS_WEB_APP_URL, {
       method: 'POST',
       body: JSON.stringify({ action: 'aiProxy', provider, prompt, modelOverride }),
+      signal
     });
     const result = await response.json();
     if (result && result.status === 'success') return result.data;
@@ -70,7 +72,7 @@ const processExtractedText = (extractedText: string, defaultTitle: string = ""):
   return { title: defaultTitle, fullText: limitedText, aiSnippet, chunks } as ExtractionResult;
 };
 
-export const extractFromUrl = async (url: string, onStageChange?: (stage: 'READING' | 'BYPASS' | 'AI_ANALYSIS') => void): Promise<ExtractionResult | null> => {
+export const extractFromUrl = async (url: string, onStageChange?: (stage: 'READING' | 'BYPASS' | 'AI_ANALYSIS') => void, signal?: AbortSignal): Promise<ExtractionResult | null> => {
   if (!GAS_WEB_APP_URL) throw new Error('Backend GAS URL missing.');
 
   onStageChange?.('READING');
@@ -78,6 +80,7 @@ export const extractFromUrl = async (url: string, onStageChange?: (stage: 'READI
     const res = await fetch(GAS_WEB_APP_URL, {
       method: 'POST',
       body: JSON.stringify({ action: 'extractOnly', url }),
+      signal
     });
     
     const data = await res.json();
@@ -90,33 +93,31 @@ export const extractFromUrl = async (url: string, onStageChange?: (stage: 'READI
   }
 };
 
-export const callIdentifierSearch = async (idValue: string): Promise<Partial<LibraryItem> | null> => {
+export const callIdentifierSearch = async (idValue: string, signal?: AbortSignal): Promise<Partial<LibraryItem> | null> => {
   if (!GAS_WEB_APP_URL) throw new Error('GAS_WEB_APP_URL missing.');
   
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000); // 15 seconds limit
+  // Use provided signal or create a local one with 15s timeout as fallback
+  const internalSignal = signal || AbortSignal.timeout(15000);
 
   try {
     const res = await fetch(GAS_WEB_APP_URL, {
       method: 'POST',
       body: JSON.stringify({ action: 'searchByIdentifier', idValue }),
-      signal: controller.signal
+      signal: internalSignal
     });
-    clearTimeout(timeoutId);
     
     const result = await res.json();
     if (result.status === 'success') return result.data;
     throw new Error(result.message || 'No data found.');
   } catch (error: any) {
-    clearTimeout(timeoutId);
-    if (error.name === 'AbortError') {
+    if (error.name === 'AbortError' || error.message === 'TIMEOUT') {
       throw new Error('TIMEOUT');
     }
     throw error;
   }
 };
 
-export const uploadAndStoreFile = async (file: File): Promise<ExtractionResult | null> => {
+export const uploadAndStoreFile = async (file: File, signal?: AbortSignal): Promise<ExtractionResult | null> => {
   if (!GAS_WEB_APP_URL) throw new Error('GAS_WEB_APP_URL missing.');
   
   const reader = new FileReader();
@@ -132,7 +133,8 @@ export const uploadAndStoreFile = async (file: File): Promise<ExtractionResult |
       fileData: base64Data, 
       fileName: file.name, 
       mimeType: file.type 
-    }) 
+    }),
+    signal
   });
   
   const result = await response.json();

@@ -7,7 +7,7 @@ import { callAiProxy } from "./gasService";
  * FOCUS: Verbatim abstract extraction, Parenthetical Harvard citations, and mandatory classification enrichment.
  * IMPORTANT: This service acts ONLY as a Librarian. It does NOT fill Insight fields (Summary, Strength, etc.).
  */
-export const extractMetadataWithAI = async (textSnippet: string, existingData: Partial<LibraryItem> = {}): Promise<Partial<LibraryItem>> => {
+export const extractMetadataWithAI = async (textSnippet: string, existingData: Partial<LibraryItem> = {}, signal?: AbortSignal): Promise<Partial<LibraryItem>> => {
   try {
     const truncatedSnippet = textSnippet.substring(0, 7500);
 
@@ -45,7 +45,7 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
        - DO NOT SUMMARIZE OR PARAPHRASE.
        - FORMATTING: Use <b> tag for sub-headers and <br/> for line breaks.
        - EMPHASIS: Use <b><i> tags for key findings.
-    6. CITATION GENERATION: Accuratelu user Harvard style.
+    6. CITATION GENERATION: Accuratelu using Academic Harvard Citation style.
     7. STRICT RESTRICTION: DO NOT fill "summary", "strength", "weakness", "researchMethodology", "unfamiliarTerminology", "supportingReferences", "videoRecommendation", or "quickTipsForYou".
     --------------------------
 
@@ -83,7 +83,7 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
       "bibHarvard": "Generate a full Harvard bibliographic entry. List ALL authors regardless of the count (up to 20 authors). Format: 'Surname, Initial., Surname, Initial. and Surname, Initial. (Year) Title of article. Journal Name, Volume(Issue), pp. pages. DOI link.'"
     }`;
 
-    const response = await callAiProxy('groq', prompt);
+    const response = await callAiProxy('groq', prompt, undefined, signal);
     if (!response) return {};
     
     let cleanJson = response.trim();

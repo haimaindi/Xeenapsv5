@@ -16,6 +16,7 @@ import {
   SparklesIcon,
   FingerPrintIcon
 } from '@heroicons/react/24/outline';
+import { Bold, Italic } from 'lucide-react';
 import { showXeenapsAlert, XEENAPS_SWAL_CONFIG } from '../../utils/swalUtils';
 import { 
   FormPageContainer, 
@@ -29,6 +30,85 @@ interface LibraryFormProps {
   onComplete: () => void;
   items: LibraryItem[];
 }
+
+/**
+ * Rich Text Abstract Editor Component
+ */
+const AbstractEditor: React.FC<{ 
+  value: string; 
+  onChange: (val: string) => void; 
+  disabled?: boolean 
+}> = ({ value, onChange, disabled }) => {
+  const editorRef = useRef<HTMLDivElement>(null);
+  const [isBold, setIsBold] = useState(false);
+  const [isItalic, setIsItalic] = useState(false);
+
+  useEffect(() => {
+    if (editorRef.current && editorRef.current.innerHTML !== value) {
+      editorRef.current.innerHTML = value;
+    }
+  }, [value]);
+
+  const updateActiveStates = () => {
+    setIsBold(document.queryCommandState('bold'));
+    setIsItalic(document.queryCommandState('italic'));
+  };
+
+  const execCommand = (command: string) => {
+    document.execCommand(command, false);
+    updateActiveStates();
+    if (editorRef.current) {
+      onChange(editorRef.current.innerHTML);
+    }
+  };
+
+  return (
+    <div className={`flex flex-col rounded-2xl border border-gray-200 overflow-hidden bg-white shadow-sm transition-all focus-within:ring-2 focus-within:ring-[#004A74]/10 focus-within:border-[#004A74]/40 ${disabled ? 'opacity-50' : ''}`}>
+      {/* Toolbar */}
+      <div className="flex items-center gap-1 p-2 bg-gray-50 border-b border-gray-100">
+        <button 
+          type="button" 
+          onClick={() => execCommand('bold')} 
+          disabled={disabled}
+          className={`p-1.5 rounded-lg transition-all ${isBold ? 'bg-[#004A74] text-white shadow-inner' : 'hover:bg-white text-[#004A74]'}`}
+          title="Bold"
+        >
+          <Bold className="w-4 h-4" />
+        </button>
+        <button 
+          type="button" 
+          onClick={() => execCommand('italic')} 
+          disabled={disabled}
+          className={`p-1.5 rounded-lg transition-all ${isItalic ? 'bg-[#004A74] text-white shadow-inner' : 'hover:bg-white text-[#004A74]'}`}
+          title="Italic"
+        >
+          <Italic className="w-4 h-4" />
+        </button>
+      </div>
+      {/* Content Area */}
+      <div
+        ref={editorRef}
+        contentEditable={!disabled}
+        onInput={(e) => {
+          onChange(e.currentTarget.innerHTML);
+          updateActiveStates();
+        }}
+        onKeyUp={updateActiveStates}
+        onMouseUp={updateActiveStates}
+        className="p-5 text-sm min-h-[180px] outline-none leading-relaxed custom-scrollbar font-medium text-gray-700"
+        {...({ "data-placeholder": "Abstract content will appear here..." } as any)}
+      />
+      <style>{`
+        [contenteditable]:empty:before {
+          content: attr(data-placeholder);
+          color: #9CA3AF;
+          pointer-events: none;
+          display: block;
+        }
+      `}</style>
+    </div>
+  );
+};
 
 const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => {
   const navigate = useNavigate();
@@ -86,9 +166,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     setFormData(prev => ({ ...prev, addMethod: mode }));
   };
 
-  /**
-   * Helper to split large text into chunks of 20,000 chars (max 10 chunks = 200,000 chars)
-   */
   const chunkifyText = (text: string): string[] => {
     if (!text) return [];
     const limitTotal = 200000;
@@ -102,11 +179,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     return chunks;
   };
 
-  // MULTI-STAGE ANALYSIS CHAIN
   const runExtractionWorkflow = async (extractedText: string, chunks: string[], detectedDoi?: string) => {
-    // Stage 1: Official Identifier Search (If DOI found in text)
     let baseData: Partial<LibraryItem> = { ...formData };
-    delete (baseData as any).chunks; // Clean for AI service
+    delete (baseData as any).chunks;
 
     if (detectedDoi) {
       setExtractionStage('FETCHING_ID');
@@ -119,7 +194,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       } catch (e) {}
     }
 
-    // Stage 2: AI Enrichment (Filling the gaps - sending only first 7.5k to AI)
     setExtractionStage('AI_ANALYSIS');
     const aiEnriched = await extractMetadataWithAI(extractedText, baseData);
     setFormData(prev => ({
@@ -128,11 +202,10 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       authors: (aiEnriched.authors && aiEnriched.authors.length > 0) ? aiEnriched.authors : prev.authors,
       keywords: (aiEnriched.keywords && aiEnriched.keywords.length > 0) ? aiEnriched.keywords : prev.keywords,
       labels: (aiEnriched.labels && aiEnriched.labels.length > 0) ? aiEnriched.labels : prev.labels,
-      chunks: chunks // Keep all 10 chunks in state
+      chunks: chunks
     }));
   };
 
-  // Logic for LINK mode
   useEffect(() => {
     const handleUrlExtraction = async () => {
       const url = formData.url.trim();
@@ -159,7 +232,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     return () => clearTimeout(tid);
   }, [formData.url, formData.addMethod]);
 
-  // Logic for REF mode (Cascading Search)
   useEffect(() => {
     const handleIdentifierSearch = async () => {
       const idVal = formData.doi.trim(); 
@@ -252,7 +324,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       
       const generatedId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
 
-      // Construct the newItem with separate keywords/labels and full chunk mapping
       const newItem: any = { 
         ...formData, 
         id: generatedId, 
@@ -261,12 +332,11 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         source: formData.addMethod === 'LINK' ? SourceType.LINK : SourceType.FILE, 
         format: formData.addMethod === 'LINK' ? FileFormat.URL : detectedFormat, 
         author: formData.authors.join(', '), 
-        keywords: formData.keywords, // Separate column
-        labels: formData.labels,     // Separate column
-        tags: [...formData.keywords, ...formData.labels] // Combined for search
+        keywords: formData.keywords, 
+        labels: formData.labels,     
+        tags: [...formData.keywords, ...formData.labels] 
       };
 
-      // Map all available chunks to extractedInfo1...10
       if (formData.chunks && formData.chunks.length > 0) {
         formData.chunks.forEach((chunk, index) => {
           if (index < 10) {
@@ -418,11 +488,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
           </div>
 
           <FormField label="Abstract (Official or AI Enhanced)">
-            <textarea 
-              className="w-full px-5 py-4 bg-gray-50 rounded-2xl border border-gray-200 text-sm min-h-[150px] leading-relaxed custom-scrollbar font-medium" 
-              placeholder="Abstract content will appear here..." 
+            <AbstractEditor 
               value={formData.abstract} 
-              onChange={(e) => setFormData({...formData, abstract: e.target.value})} 
+              onChange={(val) => setFormData({...formData, abstract: val})} 
               disabled={isFormDisabled} 
             />
           </FormField>

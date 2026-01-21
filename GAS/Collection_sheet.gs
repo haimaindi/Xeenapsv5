@@ -104,7 +104,7 @@ function getPaginatedItems(ssId, sheetName, page = 1, limit = 25, search = "", t
           let valA = a[sortIdx];
           let valB = b[sortIdx];
           
-          // Improved Date Handling for CreatedAt with numeric stability
+          // Improved Date Handling for CreatedAt
           if (sortKey === 'createdAt') {
             const timeA = valA ? new Date(valA).getTime() : 0;
             const timeB = valB ? new Date(valB).getTime() : 0;

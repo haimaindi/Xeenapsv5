@@ -49,44 +49,40 @@ import LibraryDetailView from './LibraryDetailView';
 
 /**
  * Custom Tooltip Component for truncated text
- * Implements "Overlay Expansion": The tooltip appears exactly over the original text.
+ * Updated with Viewport Boundary detection to prevent clipping and position conflicts.
  */
 const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode }> = ({ text, children }) => {
   const [show, setShow] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
-  const anchorRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ x: 0, y: 0 });
 
-  const handleMouseEnter = () => {
-    if (anchorRef.current) {
-      const rect = anchorRef.current.getBoundingClientRect();
-      setPos({
-        top: rect.top - 4, // Slight negative offset for cleaner overlap
-        left: rect.left - 8,
-        width: Math.max(rect.width + 40, 280) // Expand width but maintain min-size
-      });
-      setShow(true);
+  const handleMouseMove = (e: React.MouseEvent) => {
+    let x = e.clientX + 15;
+    let y = e.clientY + 15;
+    
+    // Boundary check for right side of screen
+    const screenWidth = window.innerWidth;
+    const tooltipWidth = 320; // max-w-xs approx
+    if (x + tooltipWidth > screenWidth) {
+      x = e.clientX - tooltipWidth - 15;
     }
+
+    setPos({ x, y });
   };
 
   if (!text || text === '-' || text === 'N/A') return <>{children}</>;
 
   return (
     <div 
-      ref={anchorRef}
-      className="relative h-full flex items-center w-full"
-      onMouseEnter={handleMouseEnter}
+      className="relative h-full flex items-center"
+      onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
+      onMouseMove={handleMouseMove}
     >
       {children}
       {show && (
         <div 
-          className="fixed z-[9999] pointer-events-none p-4 glass rounded-2xl border border-white/50 shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
-          style={{ 
-            left: pos.left, 
-            top: pos.top,
-            width: pos.width,
-            maxWidth: '450px'
-          }}
+          className="fixed z-[9999] pointer-events-none max-w-xs md:max-w-md p-4 glass rounded-2xl border border-white/50 shadow-2xl animate-in fade-in zoom-in-95 duration-200"
+          style={{ left: pos.x, top: pos.y }}
         >
           <div className="flex items-start gap-2">
             <InformationCircleIcon className="w-4 h-4 text-[#004A74] mt-0.5 shrink-0" />
@@ -129,10 +125,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
   const [activeFilter, setActiveFilter] = useState<'All' | LibraryType>('All');
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
-  
-  // FIXED INITIAL STATE: Default to createdAt DESC for accurate initial load
-  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'createdAt', direction: 'desc' });
-  
+  const [sortConfig, setSortConfig] = useState<SortConfig>({ key: 'none', direction: null });
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [showSortMenu, setShowSortMenu] = useState(false);
   const [selectedItem, setSelectedItem] = useState<LibraryItem | null>(null);
@@ -388,7 +381,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                     </td>
                     <StandardTd isActiveSort={sortConfig.key === 'title'} className="sticky left-12 z-20 border-r border-gray-100/50 bg-white group-hover:bg-[#f0f7fa] shadow-sm">
                       <ElegantTooltip text={item.title}>
-                        <div className="flex items-start gap-2 group/title w-full h-full">
+                        <div className="flex items-start gap-2 group/title">
                           <div className="shrink-0 mt-0.5 transition-transform group-hover/title:scale-110">
                             {item.addMethod === 'FILE' ? (
                               <DocumentIcon className="w-4 h-4 text-[#004A74]" />
@@ -411,18 +404,14 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                         </div>
                       </ElegantTooltip>
                     </StandardTd>
-                    <StandardTd isActiveSort={sortConfig.key === 'author'} className="text-center">
+                    <StandardTd isActiveSort={sortConfig.key === 'author'} className="text-xs text-gray-600 italic text-center">
                       <ElegantTooltip text={item.author}>
-                        <div className="text-xs text-gray-600 italic line-clamp-2 w-full h-full flex items-center justify-center">
-                          {item.author || '-'}
-                        </div>
+                        <div className="line-clamp-2">{item.author || '-'}</div>
                       </ElegantTooltip>
                     </StandardTd>
-                    <StandardTd isActiveSort={sortConfig.key === 'publisher'} className="text-center">
+                    <StandardTd isActiveSort={sortConfig.key === 'publisher'} className="text-xs text-gray-600 text-center">
                       <ElegantTooltip text={item.publisher}>
-                        <div className="text-xs text-gray-600 line-clamp-2 w-full h-full flex items-center justify-center">
-                          {item.publisher || '-'}
-                        </div>
+                        <div className="line-clamp-2">{item.publisher || '-'}</div>
                       </ElegantTooltip>
                     </StandardTd>
                     <StandardTd isActiveSort={sortConfig.key === 'year'} className="text-xs text-gray-600 font-mono text-center">{item.year || '-'}</StandardTd>

@@ -50,7 +50,7 @@ import LibraryDetailView from './LibraryDetailView';
 /**
  * Custom Tooltip Component for truncated text
  * Implements "Overlay Expansion": The tooltip appears exactly over the original text.
- * Improved positioning logic for Title, Author, and Publisher cells.
+ * Improved positioning logic to strictly attach to the row element.
  */
 const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode }> = ({ text, children }) => {
   const [show, setShow] = useState(false);
@@ -60,49 +60,49 @@ const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode }> = ({
   const handleMouseEnter = () => {
     if (anchorRef.current) {
       const rect = anchorRef.current.getBoundingClientRect();
-      
-      // Calculate dynamic expansion width based on original cell size
-      const expandWidth = Math.max(rect.width + 32, 320);
       const screenWidth = window.innerWidth;
       
+      // Calculate dynamic expansion width based on original cell size
+      const expandWidth = Math.max(rect.width + 32, 350);
+      
       // Flip logic: if expansion goes off-screen to the right, shift left
-      let finalLeft = rect.left - 16;
-      if (finalLeft + expandWidth > screenWidth - 20) {
-        finalLeft = screenWidth - expandWidth - 20;
+      let finalLeft = rect.left;
+      if (finalLeft + expandWidth > screenWidth - 16) {
+        finalLeft = screenWidth - expandWidth - 16;
       }
 
       setPos({
-        top: rect.top - 8,
-        left: Math.max(10, finalLeft),
+        top: rect.top,
+        left: Math.max(8, finalLeft),
         width: expandWidth
       });
       setShow(true);
     }
   };
 
-  if (!text || text === '-' || text === 'N/A') return <>{children}</>;
+  if (!text || text === '-' || text === 'N/A') return <div className="w-full">{children}</div>;
 
   return (
     <div 
       ref={anchorRef}
-      className="relative h-full flex items-center w-full"
+      className="w-full block"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={() => setShow(false)}
     >
       {children}
       {show && (
         <div 
-          className="fixed z-[9999] pointer-events-none p-4 glass rounded-2xl border border-white/50 shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
+          className="fixed z-[9999] pointer-events-none p-4 glass rounded-2xl border border-[#004A74]/30 shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
           style={{ 
-            left: pos.left, 
-            top: pos.top,
-            width: pos.width,
-            maxWidth: '520px'
+            left: `${pos.left}px`, 
+            top: `${pos.top}px`,
+            width: `${pos.width}px`,
+            maxWidth: '550px'
           }}
         >
           <div className="flex items-start gap-2">
             <InformationCircleIcon className="w-4 h-4 text-[#004A74] mt-0.5 shrink-0" />
-            <p className="text-xs font-bold text-[#004A74] leading-relaxed break-words">
+            <p className="text-xs font-bold text-[#004A74] leading-relaxed break-words whitespace-normal">
               {text}
             </p>
           </div>
@@ -400,7 +400,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                     </td>
                     <StandardTd isActiveSort={sortConfig.key === 'title'} className="sticky left-12 z-20 border-r border-gray-100/50 bg-white group-hover:bg-[#f0f7fa] shadow-sm">
                       <ElegantTooltip text={item.title}>
-                        <div className="flex items-start gap-2 group/title w-full h-full">
+                        <div className="flex items-start gap-2 group/title w-full">
                           <div className="shrink-0 mt-0.5 transition-transform group-hover/title:scale-110">
                             {item.addMethod === 'FILE' ? (
                               <DocumentIcon className="w-4 h-4 text-[#004A74]" />
@@ -409,30 +409,30 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="text-sm font-bold text-[#004A74] line-clamp-2 group-hover/title:underline leading-snug transition-all">
+                            <div className="block">
+                              <span className="text-sm font-bold text-[#004A74] line-clamp-2 group-hover/title:underline leading-snug transition-all inline">
                                 {item.title}
                               </span>
-                              <div className="flex items-center gap-1 shrink-0">
+                              <span className="inline-flex items-center gap-1 ml-1.5 shrink-0 align-middle">
                                 {item.isBookmarked && <BookmarkSolid className="w-3 h-3 text-[#004A74]" />}
                                 {item.isFavorite && <StarSolid className="w-3 h-3 text-[#FED400]" />}
-                              </div>
+                              </span>
                             </div>
                           </div>
                           <EyeIcon className="w-3.5 h-3.5 text-gray-300 group-hover/title:text-[#004A74] opacity-0 group-hover/title:opacity-100 transition-all shrink-0 mt-1" />
                         </div>
                       </ElegantTooltip>
                     </StandardTd>
-                    <StandardTd isActiveSort={sortConfig.key === 'author'} className="text-center">
+                    <StandardTd isActiveSort={sortConfig.key === 'author'}>
                       <ElegantTooltip text={item.author}>
-                        <div className="text-xs text-gray-600 italic line-clamp-2 w-full h-full flex items-center justify-center">
+                        <div className="text-xs text-gray-600 italic line-clamp-2 w-full block text-center">
                           {item.author || '-'}
                         </div>
                       </ElegantTooltip>
                     </StandardTd>
-                    <StandardTd isActiveSort={sortConfig.key === 'publisher'} className="text-center">
+                    <StandardTd isActiveSort={sortConfig.key === 'publisher'}>
                       <ElegantTooltip text={item.publisher}>
-                        <div className="text-xs text-gray-600 line-clamp-2 w-full h-full flex items-center justify-center">
+                        <div className="text-xs text-gray-600 line-clamp-2 w-full block text-center">
                           {item.publisher || '-'}
                         </div>
                       </ElegantTooltip>

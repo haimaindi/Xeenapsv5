@@ -288,9 +288,8 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             body: JSON.stringify({ action: 'extractOnly', url }),
             signal
           });
-          // Fix: Use type casting for res.json() to prevent void truthiness errors
-          const data = await res.json() as any;
-          if (data && data.status === 'success' && data.extractedText) {
+          const data = await res.json();
+          if (data.status === 'success' && data.extractedText) {
             const ids = { 
               doi: data.detectedDoi, 
               isbn: data.detectedIsbn, 
@@ -318,7 +317,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         workflow.execute(
           async (signal) => {
             setExtractionStage('FETCHING_ID');
-            // Fix: callIdentifierSearch properly typed in services/gasService.ts now
             const data = await callIdentifierSearch(idVal, signal);
             if (data) {
               setFormData(prev => ({ ...prev, ...data }));
@@ -330,8 +328,8 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
                   body: JSON.stringify({ action: 'extractOnly', url: targetUrl }),
                   signal
                 });
-                const scrapeData = await scrapeRes.json() as any;
-                if (scrapeData && scrapeData.status === 'success' && scrapeData.extractedText) {
+                const scrapeData = await scrapeRes.json();
+                if (scrapeData.status === 'success' && scrapeData.extractedText) {
                   await runExtractionWorkflow(scrapeData.extractedText, chunkifyText(scrapeData.extractedText), {}, data, signal);
                 } else {
                   setExtractionStage('AI_ANALYSIS');
@@ -370,8 +368,8 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             body: JSON.stringify({ action: 'extractOnly', fileData: base64Data, fileName: selectedFile.name, mimeType: selectedFile.type }),
             signal
           });
-          const result = await response.json() as any;
-          if (result && result.status === 'success' && result.extractedText) {
+          const result = await response.json();
+          if (result.status === 'success' && result.extractedText) {
             const ids = { doi: result.detectedDoi, isbn: result.detectedIsbn, pmid: result.detectedPmid, arxivId: result.detectedArxiv };
             await runExtractionWorkflow(result.extractedText, chunkifyText(result.extractedText), ids, {}, signal);
           }

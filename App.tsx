@@ -44,11 +44,10 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  // Fix: Added required arguments to fetchLibrary and updated state with .items
   const loadData = async () => {
     setIsLoading(true);
-    const data = await fetchLibrary({ page: 1, limit: 100 });
-    setItems(data.items);
+    const data = await fetchLibrary();
+    setItems(data);
     setIsLoading(false);
   };
 
@@ -83,11 +82,10 @@ const App: React.FC = () => {
               <GlobalSkeleton />
             ) : (
               <Routes>
-                {/* Fix: Removed invalid items and isLoading props from LibraryMain to resolve TS errors */}
-                <Route path="/" element={<LibraryMain onRefresh={loadData} globalSearch={searchQuery} />} />
-                <Route path="/favorite" element={<LibraryMain onRefresh={loadData} globalSearch={searchQuery} />} />
-                <Route path="/bookmark" element={<LibraryMain onRefresh={loadData} globalSearch={searchQuery} />} />
-                <Route path="/research" element={<LibraryMain onRefresh={loadData} globalSearch={searchQuery} />} />
+                <Route path="/" element={<LibraryMain items={items} isLoading={isLoading} onRefresh={loadData} globalSearch={searchQuery} />} />
+                <Route path="/favorite" element={<LibraryMain items={items} isLoading={isLoading} onRefresh={loadData} globalSearch={searchQuery} />} />
+                <Route path="/bookmark" element={<LibraryMain items={items} isLoading={isLoading} onRefresh={loadData} globalSearch={searchQuery} />} />
+                <Route path="/research" element={<LibraryMain items={items} isLoading={isLoading} onRefresh={loadData} globalSearch={searchQuery} />} />
                 
                 <Route path="/add" element={<LibraryForm onComplete={loadData} items={items} />} />
                 <Route path="/settings" element={<SettingsView />} />

@@ -1,6 +1,6 @@
 
 /**
- * XEENAPS PKM - COLLECTION DATA LAYER (PRO SCALABLE VERSION)
+ * XEENAPS PKM - COLLECTION DATA LAYER
  */
 
 function setupDatabase() {
@@ -13,79 +13,107 @@ function setupDatabase() {
       sheet.getRange(1, 1, 1, headers.length).setValues([headers]);
       sheet.getRange(1, 1, 1, headers.length).setFontWeight("bold").setBackground("#f3f3f3");
       sheet.setFrozenRows(1);
+    } else {
+      // AUTO-UPDATE COLUMNS: Detect and append missing headers from schema
+      const currentHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+      const targetHeaders = CONFIG.SCHEMAS.LIBRARY;
+      const missingHeaders = targetHeaders.filter(h => !currentHeaders.includes(h));
+      
+      if (missingHeaders.length > 0) {
+        const startCol = currentHeaders.length + 1;
+        sheet.getRange(1, startCol, 1, missingHeaders.length).setValues([missingHeaders]);
+        sheet.getRange(1, startCol, 1, missingHeaders.length).setFontWeight("bold").setBackground("#f3f3f3");
+      }
     }
-    return { status: 'success', message: 'Database initialized.' };
+    return { status: 'success', message: 'Database "Collections" has been successfully initialized/updated.' };
   } catch (err) { return { status: 'error', message: err.toString() }; }
 }
 
-function getLibraryPaged(params) {
+/**
+ * Optimized for 100,000+ rows
+ * @param {number} page
+ * @param {number} limit
+ * @param {string} search
+ * @param {string} typeFilter
+ * @param {string} pathFilter (favorite/bookmark)
+ */
+function getPaginatedItems(ssId, sheetName, page = 1, limit = 25, search = "", typeFilter = "All", pathFilter = "") {
   try {
-    const ss = SpreadsheetApp.openById(CONFIG.SPREADSHEETS.LIBRARY);
-    const sheet = ss.getSheetByName("Collections");
+    const ss = SpreadsheetApp.openById(ssId);
+    const sheet = ss.getSheetByName(sheetName);
     if (!sheet) return { items: [], totalCount: 0 };
+    
+    const lastRow = sheet.getLastRow();
+    if (lastRow <= 1) return { items: [], totalCount: 0 };
+    
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    let items = [];
+    let totalFilteredCount = 0;
 
-    const data = sheet.getDataRange().getValues();
-    if (data.length <= 1) return { items: [], totalCount: 0 };
-
-    const headers = data[0];
-    let items = data.slice(1).map(row => {
-      let item = {};
-      headers.forEach((h, i) => {
-        let val = row[i];
-        if (['tags', 'authors', 'keywords', 'labels'].includes(h)) { 
-          try { val = JSON.parse(row[i] || '[]'); } catch(e) { val = []; } 
-        }
-        item[h] = val;
+    // Jika tidak ada filter/search, ambil langsung menggunakan Range (Sangat Cepat)
+    if (!search && typeFilter === "All" && !pathFilter) {
+      totalFilteredCount = lastRow - 1;
+      const startRow = Math.max(2, lastRow - (page * limit) + 1);
+      const numRows = Math.min(limit, (lastRow - ((page - 1) * limit)) - 1);
+      
+      if (numRows > 0) {
+        const values = sheet.getRange(startRow, 1, numRows, headers.length).getValues();
+        // Karena kita ambil dari bawah, balikkan urutannya agar terbaru di atas
+        items = values.reverse().map(row => {
+          let item = {};
+          headers.forEach((h, i) => {
+            let val = row[i];
+            if (['tags', 'authors', 'keywords', 'labels'].includes(h)) { 
+              try { val = JSON.parse(row[i] || '[]'); } catch(e) { val = []; } 
+            }
+            item[h] = val;
+          });
+          return item;
+        });
+      }
+    } else {
+      // Logic Pencarian (Server-Side)
+      const allValues = sheet.getDataRange().getValues();
+      const rawData = allValues.slice(1);
+      
+      let filtered = rawData.filter(row => {
+        const itemObj = {};
+        headers.forEach((h, i) => itemObj[h] = row[i]);
+        
+        const matchesSearch = !search || headers.some((h, i) => String(row[i]).toLowerCase().includes(search.toLowerCase()));
+        const matchesType = typeFilter === "All" || itemObj.type === typeFilter;
+        const matchesPath = (!pathFilter) || 
+                          (pathFilter === "favorite" && itemObj.isFavorite === true) || 
+                          (pathFilter === "bookmark" && itemObj.isBookmarked === true) ||
+                          (pathFilter === "research" && (itemObj.type === "Literature" || itemObj.type === "Task"));
+        
+        return matchesSearch && matchesType && matchesPath;
       });
-      return item;
-    });
-
-    // 1. FILTERING
-    if (params.search) {
-      const query = params.search.toLowerCase();
-      items = items.filter(item => 
-        (item.title && item.title.toLowerCase().includes(query)) ||
-        (item.author && item.author.toLowerCase().includes(query)) ||
-        (item.topic && item.topic.toLowerCase().includes(query)) ||
-        (item.category && item.category.toLowerCase().includes(query))
-      );
+      
+      totalFilteredCount = filtered.length;
+      // Sort Descending by createdAt (Asumsi createdAt ada di kolom tertentu atau index terakhir)
+      const createdAtIdx = headers.indexOf('createdAt');
+      filtered.sort((a, b) => new Date(b[createdAtIdx]) - new Date(a[createdAtIdx]));
+      
+      const startIdx = (page - 1) * limit;
+      const paginated = filtered.slice(startIdx, startIdx + limit);
+      
+      items = paginated.map(row => {
+        let item = {};
+        headers.forEach((h, i) => {
+          let val = row[i];
+          if (['tags', 'authors', 'keywords', 'labels'].includes(h)) { 
+            try { val = JSON.parse(row[i] || '[]'); } catch(e) { val = []; } 
+          }
+          item[h] = val;
+        });
+        return item;
+      });
     }
 
-    if (params.type) items = items.filter(item => item.type === params.type);
-    if (params.isFavorite === 'true') items = items.filter(item => item.isFavorite === true);
-    if (params.isBookmarked === 'true') items = items.filter(item => item.isBookmarked === true);
-
-    // 2. SORTING (Default CreatedAt Desc)
-    const sortBy = params.sortBy || 'createdAt';
-    const sortOrder = params.sortOrder || 'desc';
-    
-    items.sort((a, b) => {
-      let valA = a[sortBy] || '';
-      let valB = b[sortBy] || '';
-      
-      if (sortBy === 'createdAt') {
-        valA = new Date(valA).getTime();
-        valB = new Date(valB).getTime();
-      } else {
-        valA = valA.toString().toLowerCase();
-        valB = valB.toString().toLowerCase();
-      }
-
-      if (valA < valB) return sortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return sortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    // 3. PAGINATION
-    const totalCount = items.length;
-    const page = parseInt(params.page || 1);
-    const limit = parseInt(params.limit || 25);
-    const startIndex = (page - 1) * limit;
-    const paginatedItems = items.slice(startIndex, startIndex + limit);
-
-    return { items: paginatedItems, totalCount: totalCount };
+    return { items, totalCount: totalFilteredCount };
   } catch(e) { 
-    return { items: [], totalCount: 0 }; 
+    return { items: [], totalCount: 0, error: e.toString() }; 
   }
 }
 
@@ -94,24 +122,11 @@ function saveToSheet(ssId, sheetName, item) {
   let sheet = ss.getSheetByName(sheetName);
   if (!sheet) { setupDatabase(); sheet = ss.getSheetByName(sheetName); }
   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
-  
-  // Update or Insert logic
-  const data = sheet.getDataRange().getValues();
-  let existingRow = -1;
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === item.id) { existingRow = i + 1; break; }
-  }
-
   const rowData = headers.map(h => {
     const val = item[h];
-    return (Array.isArray(val) || (typeof val === 'object' && val !== null)) ? JSON.stringify(val) : (val !== undefined ? val : '');
+    return (Array.isArray(val) || (typeof val === 'object' && val !== null)) ? JSON.stringify(val) : (val || '');
   });
-
-  if (existingRow !== -1) {
-    sheet.getRange(existingRow, 1, 1, rowData.length).setValues([rowData]);
-  } else {
-    sheet.appendRow(rowData);
-  }
+  sheet.appendRow(rowData);
 }
 
 function deleteFromSheet(ssId, sheetName, id) {

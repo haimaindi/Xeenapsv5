@@ -45,7 +45,7 @@ export interface LibraryItem {
   authors: string[];
   publisher: string;
   year: string;
-  fullDate?: string; 
+  fullDate?: string; // Format: DD MMM YYYY from Date picker
   
   // Academic Specifics
   journalName?: string;
@@ -102,11 +102,6 @@ export interface LibraryItem {
   
   isFavorite?: boolean;
   isBookmarked?: boolean;
-}
-
-export interface PagedLibraryData {
-  items: LibraryItem[];
-  totalCount: number;
 }
 
 export interface GASResponse<T> {

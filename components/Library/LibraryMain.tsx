@@ -1,5 +1,5 @@
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 // @ts-ignore
 import { useNavigate, useLocation } from 'react-router-dom';
 import { LibraryItem, LibraryType } from '../../types';
@@ -49,20 +49,31 @@ import LibraryDetailView from './LibraryDetailView';
 
 /**
  * Custom Tooltip Component for truncated text
+ * Updated with Viewport Boundary detection to prevent clipping and position conflicts.
  */
 const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode }> = ({ text, children }) => {
   const [show, setShow] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
 
   const handleMouseMove = (e: React.MouseEvent) => {
-    setPos({ x: e.clientX + 15, y: e.clientY + 15 });
+    let x = e.clientX + 15;
+    let y = e.clientY + 15;
+    
+    // Boundary check for right side of screen
+    const screenWidth = window.innerWidth;
+    const tooltipWidth = 320; // max-w-xs approx
+    if (x + tooltipWidth > screenWidth) {
+      x = e.clientX - tooltipWidth - 15;
+    }
+
+    setPos({ x, y });
   };
 
   if (!text || text === '-' || text === 'N/A') return <>{children}</>;
 
   return (
     <div 
-      className="relative"
+      className="relative h-full flex items-center"
       onMouseEnter={() => setShow(true)}
       onMouseLeave={() => setShow(false)}
       onMouseMove={handleMouseMove}

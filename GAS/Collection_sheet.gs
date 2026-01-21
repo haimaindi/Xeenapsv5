@@ -104,9 +104,13 @@ function getPaginatedItems(ssId, sheetName, page = 1, limit = 25, search = "", t
           let valA = a[sortIdx];
           let valB = b[sortIdx];
           
-          // Handle dates for createdAt
+          // Improved Date Handling for CreatedAt
           if (sortKey === 'createdAt') {
-            return sortDir === 'asc' ? new Date(valA) - new Date(valB) : new Date(valB) - new Date(valA);
+            const timeA = valA ? new Date(valA).getTime() : 0;
+            const timeB = valB ? new Date(valB).getTime() : 0;
+            const dA = isNaN(timeA) ? 0 : timeA;
+            const dB = isNaN(timeB) ? 0 : timeB;
+            return sortDir === 'asc' ? dA - dB : dB - dA;
           }
           
           // Case-insensitive string sort

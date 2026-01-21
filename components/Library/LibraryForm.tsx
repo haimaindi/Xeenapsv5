@@ -117,6 +117,18 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
   const [file, setFile] = useState<File | null>(null);
   const lastExtractedUrl = useRef<string>("");
   const lastIdentifier = useRef<string>("");
+
+  const CATEGORY_OPTIONS = [
+    "Algorithm", "Blog Post", "Book", "Book Chapter", "Business Report", "Case Report", "Case Series", 
+    "Checklist", "Checklist Model", "Clinical Guideline", "Conference Paper", "Course Module", "Dataset", 
+    "Dissertation", "Exam Bank", "Form", "Framework", "Guideline (Non-Clinical)", "Idea Draft", "Image", 
+    "Infographic", "Journal Entry", "Lecture Note", "Magazine Article", "Manual", "Meeting Note", "Memo", 
+    "Meta-analysis", "Mindmap", "Model", "Newspaper Article", "Original Research", "Podcast", "Policy Brief", 
+    "Preprint", "Presentation Slide", "Proceedings", "Project Document", "Proposal", "Protocol", "Rapid Review", 
+    "Reflection", "Review Article", "Scoping Review", "Standard Operating Procedure (SOP)", "Study Guide", 
+    "Syllabus", "Summary", "Systematic Review", "Teaching Material", "Technical Report", "Template", "Thesis", 
+    "Toolkit", "Video", "Web Article", "Webpage Snapshot", "White Paper", "Working Paper", "Other"
+  ];
   
   const [formData, setFormData] = useState({
     addMethod: 'FILE' as 'LINK' | 'FILE' | 'REF', 
@@ -178,10 +190,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
 
   /**
    * Unified workflow for enrichment
-   * @param extractedText Content extracted from URL or File
-   * @param chunks Text chunks for database storage
-   * @param identifiers Optional ID detection from extraction phase
-   * @param initialMetadata Optional metadata pre-fetched from Identifier API
    */
   const runExtractionWorkflow = async (
     extractedText: string, 
@@ -192,7 +200,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     let baseData: Partial<LibraryItem> = { ...formData, ...initialMetadata };
     delete (baseData as any).chunks;
 
-    // 1. If we don't have initial metadata but detected IDs, fetch them first
     if (!initialMetadata.title && (identifiers.doi || identifiers.isbn || identifiers.pmid || identifiers.arxivId)) {
       const mainId = identifiers.doi || identifiers.isbn || identifiers.pmid || identifiers.arxivId;
       setExtractionStage('FETCHING_ID');
@@ -210,8 +217,6 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       baseData.imageView = identifiers.imageView;
     }
 
-    // 2. AI Librarian Enrichment (Fills Abstract, Keywords, Labels, Citations)
-    // IMPORTANT: It will leave Insight fields empty as per user request.
     setExtractionStage('AI_ANALYSIS');
     const aiEnriched = await extractMetadataWithAI(extractedText, baseData);
     
@@ -221,6 +226,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       authors: (aiEnriched.authors && aiEnriched.authors.length > 0) ? aiEnriched.authors : prev.authors,
       keywords: (aiEnriched.keywords && aiEnriched.keywords.length > 0) ? aiEnriched.keywords : prev.keywords,
       labels: (aiEnriched.labels && aiEnriched.labels.length > 0) ? aiEnriched.labels : prev.labels,
+      category: (aiEnriched.category && aiEnriched.category !== "" && CATEGORY_OPTIONS.includes(aiEnriched.category)) ? aiEnriched.category : prev.category,
+      topic: (aiEnriched.topic && aiEnriched.topic !== "") ? aiEnriched.topic : prev.topic,
+      subTopic: (aiEnriched.subTopic && aiEnriched.subTopic !== "") ? aiEnriched.subTopic : prev.subTopic,
       chunks: chunks
     }));
   };
@@ -230,7 +238,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     return blockedDomains.some(pattern => pattern.test(url));
   };
 
-  // URL Extraction Effect (For LINK method)
+  // URL Extraction Effect
   useEffect(() => {
     const handleUrlExtraction = async () => {
       const url = formData.url.trim();
@@ -271,7 +279,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     return () => clearTimeout(tid);
   }, [formData.url, formData.addMethod]);
 
-  // REF Workflow Effect (Updated to include automatic scraping for deep enrichment)
+  // REF Workflow Effect
   useEffect(() => {
     const handleIdentifierSearchLogic = async () => {
       const idVal = formData.doi.trim(); 
@@ -282,10 +290,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
           const data = await callIdentifierSearch(idVal);
           if (data) {
             setFormData(prev => ({ ...prev, ...data }));
-            
-            // AUTOMATIC SCRAPING OF THE DERIVED URL
             const targetUrl = data.url || (data.doi ? `https://doi.org/${data.doi}` : null);
-            
             if (targetUrl && targetUrl.startsWith('http')) {
               setExtractionStage('READING');
               const scrapeRes = await fetch(GAS_WEB_APP_URL, {
@@ -294,16 +299,13 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
               });
               const scrapeData = await scrapeRes.json();
               if (scrapeData.status === 'success' && scrapeData.extractedText) {
-                // Perform Deep Enrichment using the content from the source URL
                 await runExtractionWorkflow(scrapeData.extractedText, chunkifyText(scrapeData.extractedText), {}, data);
               } else {
-                // If scraping fails, perform basic AI enrichment based on available metadata only
                 setExtractionStage('AI_ANALYSIS');
                 const aiEnriched = await extractMetadataWithAI("", data);
                 setFormData(prev => ({ ...prev, ...aiEnriched }));
               }
             } else {
-              // No URL found to scrape, enrich based on API metadata only
               setExtractionStage('AI_ANALYSIS');
               const aiEnriched = await extractMetadataWithAI("", data);
               setFormData(prev => ({ ...prev, ...aiEnriched }));
@@ -331,19 +333,13 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
           reader.onload = () => resolve((reader.result as string).split(',')[1]);
           reader.readAsDataURL(selectedFile);
         });
-
         const response = await fetch(GAS_WEB_APP_URL, { 
           method: 'POST', 
           body: JSON.stringify({ action: 'extractOnly', fileData: base64Data, fileName: selectedFile.name, mimeType: selectedFile.type }) 
         });
         const result = await response.json();
         if (result.status === 'success' && result.extractedText) {
-          const ids = { 
-            doi: result.detectedDoi, 
-            isbn: result.detectedIsbn, 
-            pmid: result.detectedPmid, 
-            arxivId: result.detectedArxiv 
-          };
+          const ids = { doi: result.detectedDoi, isbn: result.detectedIsbn, pmid: result.detectedPmid, arxivId: result.detectedArxiv };
           await runExtractionWorkflow(result.extractedText, chunkifyText(result.extractedText), ids);
         }
       } catch (err: any) {
@@ -357,15 +353,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
-    
-    Swal.fire({
-      title: 'Registering Item...',
-      text: 'Ensuring data is saved accurately. Please wait.',
-      allowOutsideClick: false,
-      didOpen: () => Swal.showLoading(),
-      ...XEENAPS_SWAL_CONFIG
-    });
-
+    Swal.fire({ title: 'Registering Item...', text: 'Ensuring data is saved accurately.', allowOutsideClick: false, didOpen: () => Swal.showLoading(), ...XEENAPS_SWAL_CONFIG });
     try {
       let detectedFormat = FileFormat.PDF;
       let fileUploadData = undefined;
@@ -377,9 +365,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         const b64 = await new Promise<string>(r => { reader.onload = () => r((reader.result as string).split(',')[1]); reader.readAsDataURL(file); });
         fileUploadData = { fileName: file.name, mimeType: file.type, fileData: b64 };
       }
-      
       const generatedId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2);
-
       const newItem: any = { 
         ...formData, 
         id: generatedId, 
@@ -392,15 +378,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         labels: formData.labels,     
         tags: [...formData.keywords, ...formData.labels] 
       };
-
       if (formData.chunks && formData.chunks.length > 0) {
-        formData.chunks.forEach((chunk, index) => {
-          if (index < 10) {
-            newItem[`extractedInfo${index + 1}`] = chunk;
-          }
-        });
+        formData.chunks.forEach((chunk, index) => { if (index < 10) newItem[`extractedInfo${index + 1}`] = chunk; });
       }
-
       const success = await saveLibraryItem(newItem, fileUploadData);
       Swal.close();
       if (success) { onComplete(); navigate('/'); }
@@ -504,7 +484,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField label="Type" required error={!formData.type}><FormDropdown value={formData.type} onChange={(v) => setFormData({...formData, type: v as LibraryType})} options={Object.values(LibraryType)} placeholder="Select type..." disabled={isFormDisabled} /></FormField>
-            <FormField label="Category" required error={!formData.category}><FormDropdown value={formData.category} onChange={(v) => setFormData({...formData, category: v})} options={['Original Research', 'Review', 'Case Study', 'Technical Report', 'Other']} placeholder="Select category..." disabled={isFormDisabled} /></FormField>
+            <FormField label="Category" required error={!formData.category}><FormDropdown value={formData.category} onChange={(v) => setFormData({...formData, category: v})} options={CATEGORY_OPTIONS} placeholder="Select category..." disabled={isFormDisabled} /></FormField>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <FormField label="Topic" required error={!formData.topic}><FormDropdown value={formData.topic} onChange={(v) => setFormData({...formData, topic: v})} options={existingValues.topics} placeholder="Scientific topic..." disabled={isFormDisabled} /></FormField>

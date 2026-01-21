@@ -4,32 +4,47 @@ import { callAiProxy } from "./gasService";
 
 /**
  * AddCollectionService - Metadata Extraction via AI Proxy (GROQ).
- * FOCUS: Verbatim abstract extraction, Parenthetical Harvard citations, and metadata-aware enrichment.
+ * FOCUS: Verbatim abstract extraction, Parenthetical Harvard citations, and mandatory classification enrichment.
  * IMPORTANT: This service acts ONLY as a Librarian. It does NOT fill Insight fields (Summary, Strength, etc.).
  */
 export const extractMetadataWithAI = async (textSnippet: string, existingData: Partial<LibraryItem> = {}): Promise<Partial<LibraryItem>> => {
   try {
     const truncatedSnippet = textSnippet.substring(0, 7500);
 
+    const categories = [
+      "Algorithm", "Blog Post", "Book", "Book Chapter", "Business Report", "Case Report", "Case Series", 
+      "Checklist", "Checklist Model", "Clinical Guideline", "Conference Paper", "Course Module", "Dataset", 
+      "Dissertation", "Exam Bank", "Form", "Framework", "Guideline (Non-Clinical)", "Idea Draft", "Image", 
+      "Infographic", "Journal Entry", "Lecture Note", "Magazine Article", "Manual", "Meeting Note", "Memo", 
+      "Meta-analysis", "Mindmap", "Model", "Newspaper Article", "Original Research", "Podcast", "Policy Brief", 
+      "Preprint", "Presentation Slide", "Proceedings", "Project Document", "Proposal", "Protocol", "Rapid Review", 
+      "Reflection", "Review Article", "Scoping Review", "Standard Operating Procedure (SOP)", "Study Guide", 
+      "Syllabus", "Summary", "Systematic Review", "Teaching Material", "Technical Report", "Template", "Thesis", 
+      "Toolkit", "Video", "Web Article", "Webpage Snapshot", "White Paper", "Working Paper", "Other"
+    ];
+
     const prompt = `ACT AS AN EXPERT SENIOR ACADEMIC LIBRARIAN (XEENAPS AI LIBRARIAN). 
     YOUR TASK IS TO ORGANIZE AND CLEAN THE METADATA FOR A LIBRARY ENTRY BASED ON THE PROVIDED TEXT.
 
     --- MANDATORY WORKFLOW ---
     1. LIBRARIAN ROLE: Identify Title, Authors, Publisher, Year, and technical identifiers.
-    2. GAP-FILLING: Use "EXISTING_DATA" as the primary source of truth. Fill ONLY fields that are currently empty ("") or "N/A".
-    3. VERBATIM ABSTRACT (CRITICAL):
+    2. GAP-FILLING: Use "EXISTING_DATA" as core facts. Fill ONLY fields that are empty ("") or "N/A".
+    3. MANDATORY CLASSIFICATION (CRITICAL):
+       - KEYWORDS: You MUST provide EXACTLY 5 relevant keywords.
+       - LABELS: You MUST provide EXACTLY 3 thematic labels.
+       - TOPIC & SUBTOPIC: You MUST determine a high-level Topic and a specific Sub-Topic.
+       - CATEGORY: You MUST choose ONLY ONE category from the APPROVED LIST provided below.
+    4. VERBATIM ABSTRACT (CRITICAL):
        - EXTRACT the abstract exactly as written in the "TEXT SNIPPET". 
        - DO NOT SUMMARIZE OR PARAPHRASE.
-       - FORMATTING: Use <b> tag for sub-headers (e.g., <b>Objective:</b>) and <br/> for line breaks.
-       - EMPHASIS: Use <b><i> tags for key findings or specific important sentences.
-       - CLEANING: Remove markdown like #, *, or []. Only use standard HTML tags (b, i, br).
-    4. CITATION GENERATION:
-       - Style: Harvard (Parenthetical).
-       - IN-TEXT: (Author, Year) or (Author et al., Year).
-       - BIBLIOGRAPHIC: Full Harvard Journal/Book format listing all authors.
-    5. STRICT RESTRICTION: DO NOT fill "summary", "strength", "weakness", "researchMethodology", "unfamiliarTerminology", "supportingReferences", "videoRecommendation", or "quickTipsForYou". Leave these fields out of your JSON response.
-    6. NO HALLUCINATION: If the information is not in the text or existing data, leave the field empty.
+       - FORMATTING: Use <b> tag for sub-headers and <br/> for line breaks.
+       - EMPHASIS: Use <b><i> tags for key findings.
+    5. CITATION GENERATION: Harvard (Parenthetical) style.
+    6. STRICT RESTRICTION: DO NOT fill "summary", "strength", "weakness", "researchMethodology", "unfamiliarTerminology", "supportingReferences", "videoRecommendation", or "quickTipsForYou".
     --------------------------
+
+    APPROVED CATEGORY LIST:
+    ${categories.join(", ")}
 
     EXISTING_DATA:
     ${JSON.stringify(existingData)}
@@ -52,14 +67,14 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
       "volume": "Vol",
       "issue": "No",
       "pages": "pp-pp",
-      "category": "e.g., Original Research",
-      "topic": "Topic Name",
-      "subTopic": "Sub Topic Name",
+      "category": "Must be from the Approved List",
+      "topic": "General Topic",
+      "subTopic": "Specific Sub-Topic",
       "abstract": "HTML formatted verbatim abstract",
-      "keywords": ["tag1", "tag2"],
-      "labels": ["label1", "label2"],
-      "inTextHarvard": "Generate a parenthetical Harvard in-text citation. For 1-2 authors, list all names (e.g., 'Author1 & Author2, 2024'). For 3 or more authors, use 'et al.' after the first author (e.g., 'Author1 et al., 2024'). Ensure no italics for 'et al.' unless specified.",
-      "bibHarvard": "Generate a full Harvard bibliographic entry. List ALL authors regardless of the count (up to 20 authors). Format: 'Surname, Initial., Surname, Initial. and Surname, Initial. (Year) Title of article. Journal Name, Volume(Issue), pp. pages. DOI link.'"
+      "keywords": ["tag1", "tag2", "tag3", "tag4", "tag5"],
+      "labels": ["label1", "label2", "label3"],
+      "inTextHarvard": "(Surname, Year)",
+      "bibHarvard": "Full bibliographic string"
     }`;
 
     const response = await callAiProxy('groq', prompt);
@@ -74,8 +89,6 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
 
     try {
       const parsed = JSON.parse(cleanJson);
-      
-      // Smart Merge logic to prevent AI from overwriting valid existing metadata
       const merged = { ...parsed };
       Object.keys(existingData).forEach(key => {
         const val = (existingData as any)[key];
@@ -83,7 +96,6 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
           merged[key] = val;
         }
       });
-
       return merged;
     } catch (e) {
       console.error('JSON Parse Error:', e);

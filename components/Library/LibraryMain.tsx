@@ -221,7 +221,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
   const totalPages = Math.ceil(totalItemsServer / itemsPerPage);
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === serverItems.length) {
+    if (selectedIds.length === serverItems.length && serverItems.length > 0) {
       setSelectedIds([]);
     } else {
       setSelectedIds(serverItems.map(item => item.id));
@@ -371,33 +371,53 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
             </StandardFilterButton>
           ))}
         </div>
-        
-        <div className="flex items-center gap-2 shrink-0">
-          <div className="relative lg:hidden shrink-0">
-            <button onClick={() => setShowSortMenu(!showSortMenu)} className={`p-2.5 rounded-xl border transition-all ${showSortMenu ? 'bg-[#004A74] border-[#004A74] text-white shadow-md' : 'bg-white border-gray-100 text-[#004A74] shadow-sm'}`}><AdjustmentsHorizontalIcon className="w-5 h-5" /></button>
-            {showSortMenu && (
-              // Fix: Corrected corrupted div tag and redundant className inside the menu
-              <div className="absolute right-0 mt-2 w-52 bg-white rounded-2xl shadow-2xl border border-gray-100 z-[60] p-2 animate-in fade-in zoom-in-95">
-                <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 px-3 py-2 border-b border-gray-50 mb-1">Sort By</p>
-                {[
-                  {k: 'title', l: 'Title'}, 
-                  {k: 'author', l: 'Author'}, 
-                  {k: 'publisher', l: 'Publisher'}, 
-                  {k: 'year', l: 'Year'}, 
-                  {k: 'category', l: 'Category'}, 
-                  {k: 'topic', l: 'Topic'}, 
-                  {k: 'subTopic', l: 'Sub Topic'}, 
-                  {k: 'createdAt', l: 'Created At'}
-                ].map((item) => (
-                  <button key={item.k} onClick={() => { handleSort(item.k as keyof LibraryItem); setShowSortMenu(false); }} className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between ${sortConfig.key === item.k ? 'bg-[#004A74]/10 text-[#004A74]' : 'text-gray-500 hover:bg-gray-50'}`}>
-                    <span>{item.l}</span>
-                    {sortConfig.key === item.k && (sortConfig.direction === 'asc' ? <ChevronUpIcon className="w-3 h-3 stroke-[3]" /> : <ChevronDownIcon className="w-3 h-3 stroke-[3]" />)}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+      </div>
+
+      {/* Utility Row: Mobile Only (Sorter | Select All) - Center align row under filter, buttons rata kiri */}
+      <div className="lg:hidden flex items-center justify-start gap-4 px-1 py-1 shrink-0">
+        <div className="relative">
+          <button 
+            onClick={() => setShowSortMenu(!showSortMenu)} 
+            className={`flex items-center gap-2 px-3 py-2 rounded-xl border transition-all ${showSortMenu ? 'bg-[#004A74] border-[#004A74] text-white shadow-md' : 'bg-white border-gray-100 text-[#004A74] shadow-sm'}`}
+          >
+            <AdjustmentsHorizontalIcon className="w-4 h-4 stroke-[2.5]" />
+            <span className="text-[10px] font-black uppercase tracking-widest">Sort</span>
+          </button>
+          
+          {showSortMenu && (
+            <div className="absolute left-0 mt-2 w-52 bg-white rounded-2xl shadow-2xl border border-gray-100 z-[60] p-2 animate-in fade-in zoom-in-95">
+              <p className="text-[10px] font-black uppercase tracking-widest text-gray-400 px-3 py-2 border-b border-gray-50 mb-1">Sort By</p>
+              {[
+                {k: 'title', l: 'Title'}, 
+                {k: 'author', l: 'Author'}, 
+                {k: 'publisher', l: 'Publisher'}, 
+                {k: 'year', l: 'Year'}, 
+                {k: 'category', l: 'Category'}, 
+                {k: 'topic', l: 'Topic'}, 
+                {k: 'subTopic', l: 'Sub Topic'}, 
+                {k: 'createdAt', l: 'Created At'}
+              ].map((item) => (
+                <button 
+                  key={item.k} 
+                  onClick={() => { handleSort(item.k as keyof LibraryItem); setShowSortMenu(false); }} 
+                  className={`w-full text-left px-3 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-between ${sortConfig.key === item.k ? 'bg-[#004A74]/10 text-[#004A74]' : 'text-gray-500 hover:bg-gray-50'}`}
+                >
+                  <span>{item.l}</span>
+                  {sortConfig.key === item.k && (sortConfig.direction === 'asc' ? <ChevronUpIcon className="w-3 h-3 stroke-[3]" /> : <ChevronDownIcon className="w-3 h-3 stroke-[3]" />)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+
+        <div className="w-px h-4 bg-gray-200" />
+
+        <button 
+          onClick={toggleSelectAll}
+          className={`text-[10px] font-black uppercase tracking-widest transition-all ${selectedIds.length === serverItems.length && serverItems.length > 0 ? 'text-red-500' : 'text-[#004A74]'}`}
+        >
+          {selectedIds.length === serverItems.length && serverItems.length > 0 ? 'Deselect All' : 'Select All'}
+        </button>
       </div>
 
       <StandardQuickAccessBar isVisible={selectedIds.length > 0} selectedCount={selectedIds.length}>

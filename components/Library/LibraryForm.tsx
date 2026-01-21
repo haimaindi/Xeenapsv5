@@ -85,13 +85,28 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     setFormData(prev => ({ ...prev, addMethod: mode }));
   };
 
+  /**
+   * Helper to split large text into chunks of 20,000 chars (max 10 chunks = 200,000 chars)
+   */
+  const chunkifyText = (text: string): string[] => {
+    if (!text) return [];
+    const limitTotal = 200000;
+    const limitedText = text.substring(0, limitTotal);
+    const chunkSize = 20000;
+    const chunks: string[] = [];
+    for (let i = 0; i < limitedText.length; i += chunkSize) {
+      if (chunks.length >= 10) break;
+      chunks.push(limitedText.substring(i, i + chunkSize));
+    }
+    return chunks;
+  };
+
   // MULTI-STAGE ANALYSIS CHAIN
   const runExtractionWorkflow = async (extractedText: string, chunks: string[], detectedDoi?: string) => {
-    // destructuring to avoid passing chunks to LibraryItem partial
-    const { chunks: _c, ...formDataWithoutChunks } = formData;
-    let baseData: Partial<LibraryItem> = formDataWithoutChunks;
-
     // Stage 1: Official Identifier Search (If DOI found in text)
+    let baseData: Partial<LibraryItem> = { ...formData };
+    delete (baseData as any).chunks; // Clean for AI service
+
     if (detectedDoi) {
       setExtractionStage('FETCHING_ID');
       try {
@@ -103,7 +118,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       } catch (e) {}
     }
 
-    // Stage 2: AI Enrichment (Filling the gaps)
+    // Stage 2: AI Enrichment (Filling the gaps - sending only first 7.5k to AI)
     setExtractionStage('AI_ANALYSIS');
     const aiEnriched = await extractMetadataWithAI(extractedText, baseData);
     setFormData(prev => ({
@@ -112,7 +127,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       authors: (aiEnriched.authors && aiEnriched.authors.length > 0) ? aiEnriched.authors : prev.authors,
       keywords: (aiEnriched.keywords && aiEnriched.keywords.length > 0) ? aiEnriched.keywords : prev.keywords,
       labels: (aiEnriched.labels && aiEnriched.labels.length > 0) ? aiEnriched.labels : prev.labels,
-      chunks: chunks
+      chunks: chunks // Keep all 10 chunks in state
     }));
   };
 
@@ -129,8 +144,8 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
             body: JSON.stringify({ action: 'extractOnly', url }),
           });
           const data = await res.json();
-          if (data.status === 'success') {
-            await runExtractionWorkflow(data.extractedText, [data.extractedText.substring(0, 20000)], data.detectedDoi);
+          if (data.status === 'success' && data.extractedText) {
+            await runExtractionWorkflow(data.extractedText, chunkifyText(data.extractedText), data.detectedDoi);
           }
         } catch (err: any) {
           showXeenapsAlert({ icon: 'warning', title: 'EXTRACTION FAILED', text: 'This link can not be extracted automatically.' });
@@ -162,8 +177,8 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
                 body: JSON.stringify({ action: 'extractOnly', url: data.url }),
               });
               const scrapeData = await scrapeRes.json();
-              if (scrapeData.status === 'success') {
-                await runExtractionWorkflow(scrapeData.extractedText, [scrapeData.extractedText.substring(0, 20000)]);
+              if (scrapeData.status === 'success' && scrapeData.extractedText) {
+                await runExtractionWorkflow(scrapeData.extractedText, chunkifyText(scrapeData.extractedText));
               }
             } else {
               setExtractionStage('AI_ANALYSIS');
@@ -199,8 +214,8 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
           body: JSON.stringify({ action: 'extractOnly', fileData: base64Data, fileName: selectedFile.name, mimeType: selectedFile.type }) 
         });
         const result = await response.json();
-        if (result.status === 'success') {
-          await runExtractionWorkflow(result.extractedText, [result.extractedText.substring(0, 20000)], result.detectedDoi);
+        if (result.status === 'success' && result.extractedText) {
+          await runExtractionWorkflow(result.extractedText, chunkifyText(result.extractedText), result.detectedDoi);
         }
       } catch (err: any) {
         showXeenapsAlert({ icon: 'warning', title: 'File Error', text: err.message || 'Extraction failed.' });
@@ -245,7 +260,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         source: formData.addMethod === 'LINK' ? SourceType.LINK : SourceType.FILE, 
         format: formData.addMethod === 'LINK' ? FileFormat.URL : detectedFormat, 
         author: formData.authors.join(', '), 
-        tags: [...formData.keywords, ...formData.labels]
+        keywords: formData.keywords, // Separate column
+        labels: formData.labels,     // Separate column
+        tags: [...formData.keywords, ...formData.labels] // Combined for search
       };
 
       // Map all available chunks to extractedInfo1...10

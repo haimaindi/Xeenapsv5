@@ -231,6 +231,17 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
     setSelectedIds(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
   };
 
+  /**
+   * Selection State Logic for Dynamic Icons
+   */
+  const { anyUnbookmarked, anyUnfavorited } = useMemo(() => {
+    const selectedItemsForIcons = serverItems.filter(i => selectedIds.includes(i.id));
+    return {
+      anyUnbookmarked: selectedItemsForIcons.some(i => !i.isBookmarked),
+      anyUnfavorited: selectedItemsForIcons.some(i => !i.isFavorite)
+    };
+  }, [selectedIds, serverItems]);
+
   const handleBatchDelete = async () => {
     if (selectedIds.length === 0) return;
     setIsInternalLoading(true);
@@ -372,8 +383,12 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
 
       <StandardQuickAccessBar isVisible={selectedIds.length > 0} selectedCount={selectedIds.length}>
         <StandardQuickActionButton variant="danger" onClick={handleBatchDelete}><TrashIcon className="w-5 h-5" /></StandardQuickActionButton>
-        <StandardQuickActionButton variant="primary" onClick={() => handleBatchAction('isBookmarked')}><BookmarkIcon className="w-5 h-5" /></StandardQuickActionButton>
-        <StandardQuickActionButton variant="warning" onClick={() => handleBatchAction('isFavorite')}><StarIcon className="w-5 h-5" /></StandardQuickActionButton>
+        <StandardQuickActionButton variant="primary" onClick={() => handleBatchAction('isBookmarked')}>
+          {anyUnbookmarked ? <BookmarkSolid className="w-5 h-5" /> : <BookmarkIcon className="w-5 h-5" />}
+        </StandardQuickActionButton>
+        <StandardQuickActionButton variant="warning" onClick={() => handleBatchAction('isFavorite')}>
+          {anyUnfavorited ? <StarSolid className="w-5 h-5" /> : <StarIcon className="w-5 h-5" />}
+        </StandardQuickActionButton>
       </StandardQuickAccessBar>
 
       <div className="hidden lg:flex flex-col flex-none">
@@ -415,12 +430,12 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                         <div className="flex items-start gap-2 group/title w-full">
                           <div className="flex-1 min-w-0">
                             <div className="block overflow-hidden" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                              <span className="inline-flex items-center gap-1 mr-1.5 align-middle shrink-0">
+                                {item.isBookmarked && <BookmarkSolid className="w-3.5 h-3.5 text-[#004A74]" />}
+                                {item.isFavorite && <StarSolid className="w-3.5 h-3.5 text-[#FED400]" />}
+                              </span>
                               <span className="text-sm font-bold text-[#004A74] group-hover/title:underline leading-tight transition-all">
                                 {item.title}
-                              </span>
-                              <span className="inline-flex items-center gap-1 ml-1.5 align-middle shrink-0">
-                                {item.isBookmarked && <BookmarkSolid className="w-3 h-3 text-[#004A74]" />}
-                                {item.isFavorite && <StarSolid className="w-3 h-3 text-[#FED400]" />}
                               </span>
                             </div>
                           </div>
@@ -480,6 +495,12 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
               isSelected={selectedIds.includes(item.id)} 
               onClick={() => setSelectedItem(item)}
             >
+              {/* Floating Status Icons Top Right */}
+              <div className="absolute top-4 right-4 flex gap-1.5 z-10">
+                {item.isBookmarked && <BookmarkSolid className="w-4 h-4 text-[#004A74] drop-shadow-sm" />}
+                {item.isFavorite && <StarSolid className="w-4 h-4 text-[#FED400] drop-shadow-sm" />}
+              </div>
+
               <div className="flex items-center gap-3 mb-2" onClick={(e) => e.stopPropagation()}>
                 <button 
                   onClick={() => toggleSelectItem(item.id)}
@@ -506,10 +527,6 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                   <h3 className="text-sm font-bold text-[#004A74] line-clamp-2 leading-tight">
                     {item.title}
                   </h3>
-                </div>
-                <div className="flex gap-1 shrink-0 mt-1">
-                  {item.isBookmarked && <BookmarkSolid className="w-3 h-3 text-[#004A74]" />}
-                  {item.isFavorite && <StarSolid className="w-3 h-3 text-[#FED400]" />}
                 </div>
               </div>
               <p className="text-xs font-medium text-gray-500 italic line-clamp-2 mb-1">

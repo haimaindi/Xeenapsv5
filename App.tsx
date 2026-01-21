@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 // @ts-ignore - Resolving TS error for missing exported members in some environments
 import { HashRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { LibraryItem } from './types';
@@ -18,15 +18,34 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
-  const loadData = async () => {
+  // Fix: Wrap loadData with useCallback to prevent child components (LibraryMain) 
+  // from re-triggering effects/skeletons when App re-renders (e.g. during sidebar toggle).
+  const loadData = useCallback(async () => {
     setIsLoading(true);
     const data = await fetchLibrary();
     setItems(data);
     setIsLoading(false);
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
+  }, [loadData]);
+
+  // Fix: iOS Stability Handler
+  // Ensures sidebar closes when user returns to app from an external link 
+  // to prevent the "stuck/expanded" visual glitch common in WebKit/iOS.
+  useEffect(() => {
+    const handleReentry = () => {
+      if (document.visibilityState === 'visible') {
+        setIsMobileSidebarOpen(false);
+      }
+    };
+    window.addEventListener('visibilitychange', handleReentry);
+    window.addEventListener('pageshow', handleReentry);
+    return () => {
+      window.removeEventListener('visibilitychange', handleReentry);
+      window.removeEventListener('pageshow', handleReentry);
+    };
   }, []);
 
   return (

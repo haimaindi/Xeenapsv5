@@ -229,8 +229,15 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     const isYouTube = extractedText.includes("YOUTUBE_METADATA") || (baseData.url && (baseData.url.includes('youtube.com') || baseData.url.includes('youtu.be')));
     if (isYouTube) {
       aiEnriched.publisher = "Youtube";
-      aiEnriched.category = "Video";
+      // Removed hardcoded category "Video" here to let AI Librarian make the final call based on context.
     }
+
+    // Fix: Normalize category matching to handle minor casing or whitespace differences from AI response.
+    const normalizedCategory = (() => {
+      if (!aiEnriched.category) return null;
+      const target = aiEnriched.category.trim().toLowerCase();
+      return CATEGORY_OPTIONS.find(opt => opt.toLowerCase() === target) || null;
+    })();
 
     setFormData(prev => ({
       ...prev,
@@ -238,7 +245,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       authors: (aiEnriched.authors && aiEnriched.authors.length > 0) ? aiEnriched.authors : prev.authors,
       keywords: (aiEnriched.keywords && aiEnriched.keywords.length > 0) ? aiEnriched.keywords : prev.keywords,
       labels: (aiEnriched.labels && aiEnriched.labels.length > 0) ? aiEnriched.labels : prev.labels,
-      category: (aiEnriched.category && aiEnriched.category !== "" && CATEGORY_OPTIONS.includes(aiEnriched.category)) ? aiEnriched.category : prev.category,
+      category: normalizedCategory || prev.category,
       topic: (aiEnriched.topic && aiEnriched.topic !== "") ? aiEnriched.topic : prev.topic,
       subTopic: (aiEnriched.subTopic && aiEnriched.subTopic !== "") ? aiEnriched.subTopic : prev.subTopic,
       chunks: chunks
@@ -513,7 +520,7 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <FormField label="Type" required error={!formData.type}><FormDropdown value={formData.type} onChange={(v) => setFormData({...formData, type: v as LibraryType})} options={Object.values(LibraryType)} placeholder="Select type..." disabled={isFormDisabled} /></FormField>
+            <FormField label="Type" required error={!formData.type}><FormDropdown value={formData.type} onChange={(v) => setFormData({...formData, type: v as LibraryType})} options={Object.values(LibraryType)} placeholder="Select type..." disabled={isFormDisabled} allowCustom={false} /></FormField>
             <FormField label="Category" required error={!formData.category}><FormDropdown value={formData.category} onChange={(v) => setFormData({...formData, category: v})} options={CATEGORY_OPTIONS} placeholder="Select category..." disabled={isFormDisabled} /></FormField>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

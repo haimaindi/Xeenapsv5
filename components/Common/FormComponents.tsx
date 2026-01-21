@@ -87,8 +87,9 @@ export const FormDropdown: React.FC<{
   multiValues?: string[];
   error?: boolean;
   disabled?: boolean;
+  allowCustom?: boolean;
 }> = ({ 
-  value, onChange, options, placeholder, isMulti, onAddMulti, onRemoveMulti, multiValues = [], error, disabled 
+  value, onChange, options, placeholder, isMulti, onAddMulti, onRemoveMulti, multiValues = [], error, disabled, allowCustom = true 
 }) => {
   const [isOpen, setIsOpen] = React.useState(false);
   const [searchTerm, setSearchTerm] = React.useState('');
@@ -132,7 +133,7 @@ export const FormDropdown: React.FC<{
     }
 
     const optionStrings = options.map(o => String(o));
-    const showAddOption = searchTerm && !optionStrings.includes(searchTerm);
+    const showAddOption = allowCustom && searchTerm && !optionStrings.includes(searchTerm);
     const totalCount = filteredOptions.length + (showAddOption ? 1 : 0);
 
     if (e.key === 'ArrowDown') {
@@ -145,7 +146,7 @@ export const FormDropdown: React.FC<{
       e.preventDefault();
       if (highlightedIndex >= 0 && highlightedIndex < filteredOptions.length) {
         handleSelect(String(filteredOptions[highlightedIndex]));
-      } else if (searchTerm) {
+      } else if (searchTerm && allowCustom) {
         handleSelect(searchTerm.trim());
       }
     } else if (e.key === 'Escape') {
@@ -196,7 +197,7 @@ export const FormDropdown: React.FC<{
             <input 
               autoFocus
               className="w-full px-3 py-2 bg-white rounded-lg text-sm outline-none border border-gray-200 focus:border-[#004A74]/30"
-              placeholder="Search or type new..."
+              placeholder={allowCustom ? "Search or type new..." : "Search..."}
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -213,7 +214,7 @@ export const FormDropdown: React.FC<{
                 {String(opt)}
               </button>
             ))}
-            {searchTerm && !options.map(o => String(o)).includes(searchTerm) && (
+            {allowCustom && searchTerm && !options.map(o => String(o)).includes(searchTerm) && (
               <button
                 type="button"
                 onClick={() => handleSelect(searchTerm)}
@@ -221,6 +222,11 @@ export const FormDropdown: React.FC<{
               >
                 <PlusSmallIcon className="w-5 h-5" /> Add: {searchTerm}
               </button>
+            )}
+            {!allowCustom && searchTerm && filteredOptions.length === 0 && (
+              <div className="px-4 py-8 text-center">
+                <p className="text-xs text-gray-400 font-bold uppercase tracking-widest">No matching options</p>
+              </div>
             )}
           </div>
         </div>

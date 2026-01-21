@@ -98,6 +98,11 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
       const merged = { ...parsed };
       Object.keys(existingData).forEach(key => {
         const val = (existingData as any)[key];
+        
+        // Fix: Category is strictly AI-Librarian's territory.
+        // We do not allow external API data to overwrite AI's intelligent classification.
+        if (key === 'category' && merged.category) return;
+
         if (val && val !== "" && val !== "N/A" && (!Array.isArray(val) || val.length > 0)) {
           merged[key] = val;
         }

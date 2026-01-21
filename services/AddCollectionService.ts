@@ -5,58 +5,59 @@ import { callAiProxy } from "./gasService";
 /**
  * AddCollectionService - Metadata Extraction via AI Proxy (GROQ).
  * FOCUS: Verbatim abstract extraction, Parenthetical Harvard citations, and metadata-aware enrichment.
+ * IMPORTANT: This service acts ONLY as a Librarian. It does NOT fill Insight fields (Summary, Strength, etc.).
  */
 export const extractMetadataWithAI = async (textSnippet: string, existingData: Partial<LibraryItem> = {}): Promise<Partial<LibraryItem>> => {
   try {
     const truncatedSnippet = textSnippet.substring(0, 7500);
 
     const prompt = `ACT AS AN EXPERT SENIOR ACADEMIC LIBRARIAN (XEENAPS AI LIBRARIAN). 
-    ENRICH THE PROVIDED METADATA USING THE TEXT SNIPPET BELOW.
+    YOUR TASK IS TO ORGANIZE AND CLEAN THE METADATA FOR A LIBRARY ENTRY BASED ON THE PROVIDED TEXT.
 
     --- MANDATORY WORKFLOW ---
-    1. GAP-FILLING & ENRICHMENT: Use the provided "EXISTING_DATA" as your core facts. Fill ONLY fields that are empty or "N/A".
-    2. ABSTRACT EXTRACTION (CRITICAL):
-       - EXTRACT VERBATIM from the TEXT SNIPPET only. 
-       - KEEP ORIGINAL LANGUAGE of the source text.
-       - FORMATTING: Use <b> tag for sub-headers (e.g., <b>Introduction:</b>, <b>Methods:</b>) followed by a line break <br/>.
-       - IMPORTANT POINTS: Use both <b><i> tags for key sentences or important points.
-       - CLEANING: Remove all markdown symbols like *, #, or brackets.
-       - EMPTY FALLBACK: If NO abstract is found in the snippet, return an empty string "". DO NOT hallucinate.
-    3. CITATION GENERATION (PREMIUM ACCURACY):
+    1. LIBRARIAN ROLE: Identify Title, Authors, Publisher, Year, and technical identifiers.
+    2. GAP-FILLING: Use "EXISTING_DATA" as the primary source of truth. Fill ONLY fields that are currently empty ("") or "N/A".
+    3. VERBATIM ABSTRACT (CRITICAL):
+       - EXTRACT the abstract exactly as written in the "TEXT SNIPPET". 
+       - DO NOT SUMMARIZE OR PARAPHRASE.
+       - FORMATTING: Use <b> tag for sub-headers (e.g., <b>Objective:</b>) and <br/> for line breaks.
+       - EMPHASIS: Use <b><i> tags for key findings or specific important sentences.
+       - CLEANING: Remove markdown like #, *, or []. Only use standard HTML tags (b, i, br).
+    4. CITATION GENERATION:
        - Style: Harvard (Parenthetical).
-       - IN-TEXT FORMAT: (Author, Year). Example: (Harris, Snell, Talbot and Harden, 2010).
-       - DO NOT use narrative style (e.g. Harris et al. (2010)). Use ONLY the parenthetical style.
-       - NO TRUNCATION (CRITICAL): Do NOT use "et al." or "...". YOU MUST LIST ALL AUTHORS provided in the metadata context in both the in-text and bibliographic entries.
-    4. NO HALLUCINATION: Identifiers (DOI, ISBN, etc.) must be EXPLICIT in the snippet.
-    5. DATA CLEANING: For "volume", "issue", and "pages", provide ONLY numbers/identifiers (no prefixes like "Vol.").
+       - IN-TEXT: (Author, Year) or (Author et al., Year).
+       - BIBLIOGRAPHIC: Full Harvard Journal/Book format listing all authors.
+    5. STRICT RESTRICTION: DO NOT fill "summary", "strength", "weakness", "researchMethodology", "unfamiliarTerminology", "supportingReferences", "videoRecommendation", or "quickTipsForYou". Leave these fields out of your JSON response.
+    6. NO HALLUCINATION: If the information is not in the text or existing data, leave the field empty.
     --------------------------
 
-    EXISTING_DATA (USE THESE FACTS AS PRIMARY):
+    EXISTING_DATA:
     ${JSON.stringify(existingData)}
 
-    TEXT SNIPPET (SOURCE FOR ABSTRACT):
+    TEXT SNIPPET:
     ${truncatedSnippet}
 
     EXPECTED JSON OUTPUT (RAW JSON ONLY):
     {
-      "title": "Full Official Title",
-      "authors": ["Array of names"],
+      "title": "Official Title",
+      "authors": ["Author 1", "Author 2"],
       "year": "YYYY",
-      "publisher": "Name",
-      "doi": "Only if explicit",
-      "isbn": "Only if explicit",
-      "issn": "Only if explicit",
-      "pmid": "Only if explicit",
-      "arxivId": "Only if explicit",
+      "publisher": "Publisher Name",
+      "doi": "DOI",
+      "isbn": "ISBN",
+      "issn": "ISSN",
+      "pmid": "PMID",
+      "arxivId": "arXiv ID",
+      "journalName": "Journal Name",
+      "volume": "Vol",
+      "issue": "No",
+      "pages": "pp-pp",
       "category": "e.g., Original Research",
-      "topic": "Exactly 2 words",
-      "subTopic": "Exactly 2 words",
+      "topic": "Topic Name",
+      "subTopic": "Sub Topic Name",
       "abstract": "HTML formatted verbatim abstract",
-      "keywords": ["5 key terms"],
-      "labels": ["3 thematic labels"],
-      "volume": "14",
-      "issue": "2",
-      "pages": "120-135",
+      "keywords": ["tag1", "tag2"],
+      "labels": ["label1", "label2"],
       "inTextHarvard": "Generate a parenthetical Harvard in-text citation. For 1-2 authors, list all names (e.g., 'Author1 & Author2, 2024'). For 3 or more authors, use 'et al.' after the first author (e.g., 'Author1 et al., 2024'). Ensure no italics for 'et al.' unless specified.",
       "bibHarvard": "Generate a full Harvard bibliographic entry. List ALL authors regardless of the count (up to 20 authors). Format: 'Surname, Initial., Surname, Initial. and Surname, Initial. (Year) Title of article. Journal Name, Volume(Issue), pp. pages. DOI link.'"
     }`;
@@ -74,6 +75,7 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
     try {
       const parsed = JSON.parse(cleanJson);
       
+      // Smart Merge logic to prevent AI from overwriting valid existing metadata
       const merged = { ...parsed };
       Object.keys(existingData).forEach(key => {
         const val = (existingData as any)[key];

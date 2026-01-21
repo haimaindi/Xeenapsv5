@@ -114,7 +114,7 @@ function mergeMetadata(sourceAlex, sourceCrossref) {
   const c = sourceCrossref.data;
   const merged = { ...a };
 
-  const technicalKeys = ['publisher', 'journalName', 'volume', 'issue', 'pages', 'year', 'fullDate', 'issn', 'isbn'];
+  const technicalKeys = ['publisher', 'journalName', 'volume', 'issue', 'pages', 'year', 'fullDate', 'issn', 'isbn', 'url'];
   technicalKeys.forEach(key => {
     if (c[key] && String(c[key]).length > 0) {
       merged[key] = c[key];
@@ -128,6 +128,11 @@ function mergeMetadata(sourceAlex, sourceCrossref) {
   const cAuthors = Array.isArray(c.authors) ? c.authors : [];
   if (cAuthors.length >= aAuthors.length) {
     merged.authors = cAuthors;
+  }
+
+  // Ensure canonical URL is present for scraping
+  if (!merged.url && merged.doi) {
+    merged.url = `https://doi.org/${merged.doi}`;
   }
 
   return { status: 'success', data: merged };
@@ -158,6 +163,7 @@ function searchOpenAlexByTitle(title) {
         year: item.publication_year ? item.publication_year.toString() : "",
         fullDate: standardizeFullDate(item.publication_date),
         doi: item.doi ? item.doi.replace('https://doi.org/', '') : "",
+        url: item.doi || "",
         abstract: "" // Delegated to AI
       }
     };
@@ -189,6 +195,7 @@ function fetchOpenAlexMetadata(doi) {
         issue: sanitizeNumericValue(item.biblio?.issue || ""),
         pages: sanitizeNumericValue((item.biblio?.first_page && item.biblio?.last_page) ? `${item.biblio.first_page}-${item.biblio.last_page}` : (item.biblio?.first_page || "")),
         doi: doi,
+        url: `https://doi.org/${doi}`,
         issn: (source?.issn && source.issn[0]) || "",
         abstract: "" // Delegated to AI
       }
@@ -243,6 +250,8 @@ function parseCrossrefItem(item, doi) {
     rawDate = p.length === 3 ? `${p[0]}-${p[1]}-${p[2]}` : (p.length === 2 ? `${p[0]}-${p[1]}` : `${p[0]}`);
   }
 
+  const finalDoi = item.DOI || doi || "";
+
   return {
     status: 'success',
     data: {
@@ -255,7 +264,8 @@ function parseCrossrefItem(item, doi) {
       volume: sanitizeNumericValue(item.volume || ""),
       issue: sanitizeNumericValue(item.issue || ""),
       pages: sanitizeNumericValue(item.page || ""),
-      doi: item.DOI || doi || "",
+      doi: finalDoi,
+      url: finalDoi ? `https://doi.org/${finalDoi}` : (item.URL || ""),
       issn: (item.ISSN && item.ISSN[0]) || "",
       isbn: (item.ISBN && item.ISBN[0]) || "",
       abstract: "" // Delegated to AI
@@ -289,6 +299,7 @@ function searchOpenLibraryByTitle(title) {
         year: (doc.first_publish_year || "").toString(),
         fullDate: doc.first_publish_year ? `01 Jan ${doc.first_publish_year}` : "",
         isbn: (doc.isbn || [])[0] || "",
+        url: doc.key ? `https://openlibrary.org${doc.key}` : "",
         abstract: ""
       }
     };
@@ -316,6 +327,7 @@ function fetchOpenLibraryMetadata(isbn) {
         year: book.publish_date ? book.publish_date.match(/\d{4}/)?.[0] || "" : "",
         fullDate: standardizeFullDate(book.publish_date),
         isbn: isbn,
+        url: book.url || `https://openlibrary.org/isbn/${isbn}`,
         pages: sanitizeNumericValue(book.number_of_pages ? book.number_of_pages.toString() : ""),
         abstract: ""
       }
@@ -334,6 +346,8 @@ function fetchPubMedMetadata(pmid) {
     const result = data.result[pmid];
     if (!result) return { status: 'error' };
 
+    const doiFound = (result.articleids || []).find(id => id.idtype === 'doi')?.value || "";
+
     return {
       status: 'success',
       data: {
@@ -347,7 +361,8 @@ function fetchPubMedMetadata(pmid) {
         volume: sanitizeNumericValue(result.volume || ""),
         issue: sanitizeNumericValue(result.issue || ""),
         pages: sanitizeNumericValue(result.pages || ""),
-        doi: (result.articleids || []).find(id => id.idtype === 'doi')?.value || "",
+        doi: doiFound,
+        url: doiFound ? `https://doi.org/${doiFound}` : `https://pubmed.ncbi.nlm.nih.gov/${pmid}/`,
         abstract: ""
       }
     };
@@ -366,7 +381,8 @@ function fetchArxivMetadata(id) {
     const title = xml.match(/<title>([\s\S]*?)<\/title>/)?.[1].replace(/\s+/g, ' ').trim() || "";
     const authors = [...xml.matchAll(/<name>([\s\S]*?)<\/name>/g)].map(m => m[1]);
     const pubTag = xml.match(/<published>([\s\S]*?)<\/published>/)?.[1] || "";
-    
+    const doiFound = xml.match(/<arxiv:doi[^>]*>([\s\S]*?)<\/arxiv:doi>/)?.[1] || "";
+
     return {
       status: 'success',
       data: {
@@ -376,7 +392,8 @@ function fetchArxivMetadata(id) {
         year: pubTag ? pubTag.substring(0, 4) : "",
         fullDate: standardizeFullDate(pubTag),
         arxivId: id,
-        doi: xml.match(/<arxiv:doi[^>]*>([\s\S]*?)<\/arxiv:doi>/)?.[1] || "",
+        doi: doiFound,
+        url: doiFound ? `https://doi.org/${doiFound}` : `https://arxiv.org/abs/${id}`,
         abstract: "" // AI will extract from snippet
       }
     };

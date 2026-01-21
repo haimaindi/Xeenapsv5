@@ -176,16 +176,28 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     return chunks;
   };
 
-  const runExtractionWorkflow = async (extractedText: string, chunks: string[], identifiers: { doi?: string, isbn?: string, pmid?: string, arxivId?: string, imageView?: string } = {}) => {
-    let baseData: Partial<LibraryItem> = { ...formData };
+  /**
+   * Unified workflow for enrichment
+   * @param extractedText Content extracted from URL or File
+   * @param chunks Text chunks for database storage
+   * @param identifiers Optional ID detection from extraction phase
+   * @param initialMetadata Optional metadata pre-fetched from Identifier API
+   */
+  const runExtractionWorkflow = async (
+    extractedText: string, 
+    chunks: string[], 
+    identifiers: { doi?: string, isbn?: string, pmid?: string, arxivId?: string, imageView?: string } = {},
+    initialMetadata: Partial<LibraryItem> = {}
+  ) => {
+    let baseData: Partial<LibraryItem> = { ...formData, ...initialMetadata };
     delete (baseData as any).chunks;
 
-    const mainId = identifiers.doi || identifiers.isbn || identifiers.pmid || identifiers.arxivId;
-
-    if (mainId) {
+    // 1. If we don't have initial metadata but detected IDs, fetch them first
+    if (!initialMetadata.title && (identifiers.doi || identifiers.isbn || identifiers.pmid || identifiers.arxivId)) {
+      const mainId = identifiers.doi || identifiers.isbn || identifiers.pmid || identifiers.arxivId;
       setExtractionStage('FETCHING_ID');
       try {
-        const officialData = await callIdentifierSearch(mainId);
+        const officialData = await callIdentifierSearch(mainId!);
         if (officialData) {
           baseData = { ...baseData, ...officialData };
           setFormData(prev => ({ ...prev, ...officialData }));
@@ -193,14 +205,16 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
       } catch (e) {}
     }
 
-    // Handle ImageView from Drive Link
     if (identifiers.imageView) {
       setFormData(prev => ({ ...prev, imageView: identifiers.imageView }));
       baseData.imageView = identifiers.imageView;
     }
 
+    // 2. AI Librarian Enrichment (Fills Abstract, Keywords, Labels, Citations)
+    // IMPORTANT: It will leave Insight fields empty as per user request.
     setExtractionStage('AI_ANALYSIS');
     const aiEnriched = await extractMetadataWithAI(extractedText, baseData);
+    
     setFormData(prev => ({
       ...prev,
       ...aiEnriched,
@@ -216,32 +230,12 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     return blockedDomains.some(pattern => pattern.test(url));
   };
 
-  const isDriveFormatSupported = (mime: string) => {
-    if (!mime) return true; // Fallback if no mime detected
-    const allowed = [
-      'application/pdf', 
-      'image/', 
-      'application/vnd.google-apps.document',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'application/msword',
-      'text/plain',
-      'application/vnd.google-apps.presentation',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-      'application/vnd.ms-powerpoint',
-      'application/vnd.google-apps.spreadsheet',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      'application/vnd.ms-excel',
-      'text/csv'
-    ];
-    return allowed.some(type => mime.toLowerCase().includes(type.toLowerCase()));
-  };
-
+  // URL Extraction Effect (For LINK method)
   useEffect(() => {
     const handleUrlExtraction = async () => {
       const url = formData.url.trim();
       if (!url || !url.startsWith('http') || url === lastExtractedUrl.current || formData.addMethod !== 'LINK') return;
 
-      // 1. Social Media Check (Allow YouTube only)
       if (isSocialMediaBlocked(url) && !url.includes('youtube.com') && !url.includes('youtu.be')) {
         showXeenapsAlert({ icon: 'error', title: 'LINK NON SUPPORTED', text: 'Social media links (except YouTube) are not allowed.' });
         setFormData(prev => ({ ...prev, url: '' }));
@@ -258,31 +252,14 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
         const data = await res.json();
 
         if (data.status === 'success' && data.extractedText) {
-          const isDrive = url.includes('drive.google.com') || url.includes('docs.google.com');
-          const isYoutube = url.includes('youtube.com') || url.includes('youtu.be');
-
-          // 2. Drive Mime Validation
-          if (isDrive && data.mimeType && !isDriveFormatSupported(data.mimeType)) {
-            showXeenapsAlert({ icon: 'error', title: 'LINK NON SUPPORTED', text: 'Audio, video, or unsupported Drive formats are not allowed.' });
-            setFormData(prev => ({ ...prev, url: '' }));
-            return;
-          }
-
-          if (isYoutube) {
-            setExtractionStage('AI_ANALYSIS');
-            const aiEnriched = await extractMetadataWithAI(data.extractedText, formData);
-            setFormData(prev => ({ ...prev, ...aiEnriched, chunks: chunkifyText(data.extractedText) }));
-          } else {
-            // SNIPPET TO 7500 FOR IDENTIFIER SEARCH (Sync with backend limit)
-            const ids = { 
-              doi: data.detectedDoi, 
-              isbn: data.detectedIsbn, 
-              pmid: data.detectedPmid, 
-              arxivId: data.detectedArxiv,
-              imageView: data.imageView 
-            };
-            await runExtractionWorkflow(data.extractedText, chunkifyText(data.extractedText), ids);
-          }
+          const ids = { 
+            doi: data.detectedDoi, 
+            isbn: data.detectedIsbn, 
+            pmid: data.detectedPmid, 
+            arxivId: data.detectedArxiv,
+            imageView: data.imageView 
+          };
+          await runExtractionWorkflow(data.extractedText, chunkifyText(data.extractedText), ids);
         }
       } catch (err: any) {
         showXeenapsAlert({ icon: 'warning', title: 'EXTRACTION FAILED', text: 'This link can not be extracted automatically.' });
@@ -294,8 +271,9 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     return () => clearTimeout(tid);
   }, [formData.url, formData.addMethod]);
 
+  // REF Workflow Effect (Updated to include automatic scraping for deep enrichment)
   useEffect(() => {
-    const handleIdentifierSearch = async () => {
+    const handleIdentifierSearchLogic = async () => {
       const idVal = formData.doi.trim(); 
       if (idVal && idVal !== lastIdentifier.current && formData.addMethod === 'REF') {
         lastIdentifier.current = idVal;
@@ -305,30 +283,40 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
           if (data) {
             setFormData(prev => ({ ...prev, ...data }));
             
-            if (data.url && data.url.startsWith('http')) {
+            // AUTOMATIC SCRAPING OF THE DERIVED URL
+            const targetUrl = data.url || (data.doi ? `https://doi.org/${data.doi}` : null);
+            
+            if (targetUrl && targetUrl.startsWith('http')) {
               setExtractionStage('READING');
               const scrapeRes = await fetch(GAS_WEB_APP_URL, {
                 method: 'POST',
-                body: JSON.stringify({ action: 'extractOnly', url: data.url }),
+                body: JSON.stringify({ action: 'extractOnly', url: targetUrl }),
               });
               const scrapeData = await scrapeRes.json();
               if (scrapeData.status === 'success' && scrapeData.extractedText) {
-                await runExtractionWorkflow(scrapeData.extractedText, chunkifyText(scrapeData.extractedText));
+                // Perform Deep Enrichment using the content from the source URL
+                await runExtractionWorkflow(scrapeData.extractedText, chunkifyText(scrapeData.extractedText), {}, data);
+              } else {
+                // If scraping fails, perform basic AI enrichment based on available metadata only
+                setExtractionStage('AI_ANALYSIS');
+                const aiEnriched = await extractMetadataWithAI("", data);
+                setFormData(prev => ({ ...prev, ...aiEnriched }));
               }
             } else {
+              // No URL found to scrape, enrich based on API metadata only
               setExtractionStage('AI_ANALYSIS');
-              const simpleEnrich = await extractMetadataWithAI("", data);
-              setFormData(prev => ({ ...prev, ...simpleEnrich }));
+              const aiEnriched = await extractMetadataWithAI("", data);
+              setFormData(prev => ({ ...prev, ...aiEnriched }));
             }
           }
         } catch (e: any) {
-          showXeenapsAlert({ icon: 'error', title: 'SEARCH FAILED', text: 'No Data Found, please give right identifier' });
+          showXeenapsAlert({ icon: 'error', title: 'SEARCH FAILED', text: 'No Data Found, please provide a valid identifier.' });
         } finally {
           setExtractionStage('IDLE');
         }
       }
     };
-    const tid = setTimeout(handleIdentifierSearch, 1500);
+    const tid = setTimeout(handleIdentifierSearchLogic, 1500);
     return () => clearTimeout(tid);
   }, [formData.doi, formData.addMethod]);
 
@@ -505,9 +493,10 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
               <div className="flex items-center gap-2 px-2 animate-in fade-in slide-in-from-top-1 duration-300">
                 <SparklesIcon className="w-4 h-4 text-[#FED400] animate-pulse" />
                 <span className="text-[10px] font-black text-[#004A74] uppercase tracking-tighter">
-                  {extractionStage === 'READING' ? 'Content Extraction...' : 
-                   extractionStage === 'AI_ANALYSIS' ? 'AI Analyzing Content...' : 
-                   extractionStage === 'FETCHING_ID' ? 'Fetching Metadata from Global APIs...' : 'Bypassing Protection...'}
+                  {extractionStage === 'FETCHING_ID' ? 'Fetching Metadata from Global APIs...' : 
+                   extractionStage === 'READING' ? 'Following Link & Reading Content...' : 
+                   extractionStage === 'AI_ANALYSIS' ? 'AI Librarian Analyzing Content...' : 
+                   extractionStage === 'BYPASS' ? 'Bypassing Protection...' : 'Processing...'}
                 </span>
               </div>
             )}

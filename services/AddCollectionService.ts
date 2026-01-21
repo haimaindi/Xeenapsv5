@@ -1,3 +1,4 @@
+
 import { LibraryItem } from "../types";
 import { callAiProxy } from "./gasService";
 
@@ -19,12 +20,15 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
        - Required styles: APA, Harvard, Chicago.
        - Required formats: In-Text and Full Bibliography.
     4. NO HALLUCINATION: If identifiers (DOI, ISBN, ISSN, PMID, ArXiv) are NOT explicitly found in the text, leave them empty. DO NOT guess or hallucinate these values.
-    5. ABSTRACT CLEANING & FORMATTING:
+    5. DATA CLEANING: For "volume", "issue", and "pages", provide ONLY the numbers or identifiers. 
+       - Remove descriptive prefixes like "Volume", "Vol.", "Issue", "No.", "Pages", or "pp.".
+       - Example: If the text says "Volume 14", return "14". If it says "Issue No. 2", return "2".
+    6. ABSTRACT CLEANING & FORMATTING:
        - Keep original language (DO NOT TRANSLATE).
        - Remove all special characters like '*', '#', or double asterisks.
        - If sub-headers (e.g., Introduction, Methods, Results, Conclusion) are present, format them as: <b>Header Name:</b> followed by a line break.
        - Ensure a clean, readable flow.
-    6. THEMATIC ANALYSIS: Determine Category, Topic, and SubTopic accurately.
+    7. THEMATIC ANALYSIS: Determine Category, Topic, and SubTopic accurately.
     --------------------------
 
     EXISTING_DATA:
@@ -50,6 +54,9 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
       "abstract": "Cleaned and formatted abstract",
       "keywords": ["5 key terms"],
       "labels": ["3 thematic labels"],
+      "volume": "14",
+      "issue": "2",
+      "pages": "120-135",
       "inTextAPA": "APA In-text citation",
       "inTextHarvard": "Harvard In-text citation",
       "inTextChicago": "Chicago In-text citation",

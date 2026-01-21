@@ -1,3 +1,4 @@
+
 /**
  * XEENAPS PKM - ACADEMIC IDENTIFIER MODULE (SMART ROUTER V6)
  * Exclusive OpenLibrary for Books, Crossref/OpenAlex for Journals
@@ -14,9 +15,16 @@ function handleIdentifierSearch(idValue) {
   
   if (doiMatch) {
     const doi = doiMatch[0];
-    const crossref = fetchCrossrefMetadata(doi);
-    const openAlex = fetchOpenAlexMetadata(doi);
-    return mergeMetadata(crossref, openAlex);
+    
+    // Sequential Flow: Call OpenAlex First (Stronger on content/abstract)
+    let alexResult = fetchOpenAlexMetadata(doi);
+    
+    // Check if we need more technical details (Crossref is authority for metadata)
+    // Even if OpenAlex is successful, we compare with Crossref to ensure publisher/journal accuracy
+    let crossrefResult = fetchCrossrefMetadata(doi);
+    
+    // Compare and Merge (Smart Merge)
+    return mergeMetadata(alexResult, crossrefResult);
   }
 
   // 2. ISBN DETECTION
@@ -38,7 +46,6 @@ function handleIdentifierSearch(idValue) {
 
   // 5. BIBCODE DETECTION (e.g., 1974AJ.....79..819H)
   if (val.match(/^\d{4}[A-Za-z0-9.&]{15}$/)) {
-    // Try resolving as a query string in Crossref which handles many Bibcodes
     return fetchCrossrefMetadata(null, val); 
   }
 
@@ -48,7 +55,6 @@ function handleIdentifierSearch(idValue) {
     const alexSearch = searchOpenAlexByTitle(val);
     const olSearch = searchOpenLibraryByTitle(val);
 
-    // Identify if any is a verbatim match
     const searchResults = [crossrefSearch, alexSearch, olSearch];
     const verbatimMatch = searchResults.find(r => 
       r.status === 'success' && 
@@ -57,14 +63,21 @@ function handleIdentifierSearch(idValue) {
 
     if (verbatimMatch) return verbatimMatch;
 
-    // If no verbatim match, return the "Closest Match" (Best Effort)
-    // Priority for scientific works: Crossref -> OpenAlex -> OpenLibrary
     if (crossrefSearch.status === 'success') return crossrefSearch;
     if (alexSearch.status === 'success') return alexSearch;
     if (olSearch.status === 'success') return olSearch;
   }
 
   return { status: 'error', message: 'No Data Found, please give right identifier' };
+}
+
+/**
+ * Helper to sanitize numeric fields (Volume, Issue, Pages)
+ */
+function sanitizeNumericValue(val) {
+  if (!val || typeof val !== 'string') return val;
+  // Removes common prefixes like "Vol.", "Volume", "No.", "Issue", "Pages", "pp.", case-insensitive
+  return val.replace(/^(vol\.?|volume|no\.?|issue|pages?|pp\.?)\s+/i, '').trim();
 }
 
 /**
@@ -91,27 +104,44 @@ function standardizeFullDate(dateStr) {
 }
 
 /**
- * Merges metadata from two sources.
+ * Smart Merge Algorithm (Sequential Priority)
+ * Comparison logic:
+ * - Content (Abstract/Keywords): OpenAlex has priority.
+ * - Publication Info (Publisher/Journal/Vol/Issue): Crossref has priority.
  */
-function mergeMetadata(sourceA, sourceB) {
-  if (sourceA.status !== 'success' && sourceB.status !== 'success') return sourceA;
-  if (sourceA.status !== 'success') return sourceB;
-  if (sourceB.status !== 'success') return sourceA;
+function mergeMetadata(sourceAlex, sourceCrossref) {
+  if (sourceAlex.status !== 'success' && sourceCrossref.status !== 'success') return sourceAlex;
+  if (sourceAlex.status !== 'success') return sourceCrossref;
+  if (sourceCrossref.status !== 'success') return sourceAlex;
 
-  const a = sourceA.data;
-  const b = sourceB.data;
+  const a = sourceAlex.data;
+  const c = sourceCrossref.data;
+  
+  // Initialize with OpenAlex data (usually good for content)
   const merged = { ...a };
 
-  Object.keys(b).forEach(key => {
-    const valA = String(merged[key] || "");
-    const valB = String(b[key] || "");
-    if (valA.length < valB.length) {
-      merged[key] = b[key];
-    }
-    if (key === 'authors' && Array.isArray(b.authors) && b.authors.length > (Array.isArray(a.authors) ? a.authors.length : 0)) {
-      merged.authors = b.authors;
+  // Refinement: Metadata published officially in Crossref is usually more accurate
+  // than OpenAlex which uses a web-crawler based approach
+  const technicalKeys = ['publisher', 'journalName', 'volume', 'issue', 'pages', 'year', 'fullDate', 'issn', 'isbn'];
+  technicalKeys.forEach(key => {
+    // If Crossref has the data, override OpenAlex because Crossref is the DOI official registrar
+    if (c[key] && String(c[key]).length > 0) {
+      merged[key] = c[key];
     }
   });
+
+  // Abstract Priority: OpenAlex usually has clean abstracts, while Crossref often lacks them.
+  // Use Crossref abstract only if OpenAlex didn't provide any.
+  if (!merged.abstract && c.abstract) {
+    merged.abstract = c.abstract;
+  }
+
+  // Authors Priority: Use the one that provides a more complete array
+  const aAuthors = Array.isArray(a.authors) ? a.authors : [];
+  const cAuthors = Array.isArray(c.authors) ? c.authors : [];
+  if (cAuthors.length >= aAuthors.length) {
+    merged.authors = cAuthors;
+  }
 
   return { status: 'success', data: merged };
 }
@@ -145,13 +175,16 @@ function searchOpenAlexByTitle(title) {
     if (!data.results || data.results.length === 0) return { status: 'error' };
 
     const item = data.results[0];
+    const source = item.primary_location?.source;
+    
     return {
       status: 'success',
       data: {
         title: item.title || "",
         authors: (item.authorships || []).map(a => a.author.display_name),
-        publisher: item.primary_location?.source?.display_name || "",
-        journalName: item.primary_location?.source?.display_name || "",
+        // FIX: Mapping Publisher vs Journal name
+        publisher: source?.host_organization_name || source?.publisher || source?.display_name || "",
+        journalName: source?.display_name || "",
         year: item.publication_year ? item.publication_year.toString() : "",
         fullDate: standardizeFullDate(item.publication_date),
         doi: item.doi ? item.doi.replace('https://doi.org/', '') : "",
@@ -171,20 +204,23 @@ function fetchOpenAlexMetadata(doi) {
     if (res.getResponseCode() !== 200) return { status: 'error' };
 
     const item = JSON.parse(res.getContentText());
+    const source = item.primary_location?.source;
+
     return {
       status: 'success',
       data: {
         title: item.title || "",
         authors: (item.authorships || []).map(a => a.author.display_name),
-        publisher: item.primary_location?.source?.display_name || "",
-        journalName: item.primary_location?.source?.display_name || "",
+        // FIX: Separate Publisher (Org) and Journal (Source)
+        publisher: source?.host_organization_name || source?.publisher || source?.display_name || "",
+        journalName: source?.display_name || "",
         year: item.publication_year ? item.publication_year.toString() : "",
         fullDate: standardizeFullDate(item.publication_date),
-        volume: item.biblio?.volume || "",
-        issue: item.biblio?.issue || "",
-        pages: (item.biblio?.first_page && item.biblio?.last_page) ? `${item.biblio.first_page}-${item.biblio.last_page}` : (item.biblio?.first_page || ""),
+        volume: sanitizeNumericValue(item.biblio?.volume || ""),
+        issue: sanitizeNumericValue(item.biblio?.issue || ""),
+        pages: sanitizeNumericValue((item.biblio?.first_page && item.biblio?.last_page) ? `${item.biblio.first_page}-${item.biblio.last_page}` : (item.biblio?.first_page || "")),
         doi: doi,
-        issn: (item.primary_location?.source?.issn && item.primary_location.source.issn[0]) || "",
+        issn: (source?.issn && source.issn[0]) || "",
         abstract: decodeOpenAlexAbstract(item.abstract_inverted_index)
       }
     };
@@ -214,13 +250,11 @@ function fetchCrossrefMetadata(doi, queryTitle) {
     const items = data.message.items || [];
     if (items.length === 0) return { status: 'error' };
 
-    // 1. Verbatim Match first
     let selectedItem = items.find(item => {
       const title = (item.title && item.title[0]) || "";
       return title.toLowerCase().trim() === queryTitle.toLowerCase().trim();
     });
 
-    // 2. Filter "Correction to:"
     if (!selectedItem) {
       selectedItem = items.find(item => {
         const title = (item.title && item.title[0]) || "";
@@ -249,9 +283,9 @@ function parseCrossrefItem(item, doi) {
       journalName: (item["container-title"] && item["container-title"][0]) || "",
       year: (item.issued?.["date-parts"]?.[0]?.[0] || "").toString(),
       fullDate: standardizeFullDate(rawDate),
-      volume: item.volume || "",
-      issue: item.issue || "",
-      pages: item.page || "",
+      volume: sanitizeNumericValue(item.volume || ""),
+      issue: sanitizeNumericValue(item.issue || ""),
+      pages: sanitizeNumericValue(item.page || ""),
       doi: item.DOI || doi || "",
       issn: (item.ISSN && item.ISSN[0]) || "",
       isbn: (item.ISBN && item.ISBN[0]) || "",
@@ -312,7 +346,7 @@ function fetchOpenLibraryMetadata(isbn) {
         year: book.publish_date ? book.publish_date.match(/\d{4}/)?.[0] || "" : "",
         fullDate: standardizeFullDate(book.publish_date),
         isbn: isbn,
-        pages: book.number_of_pages ? book.number_of_pages.toString() : ""
+        pages: sanitizeNumericValue(book.number_of_pages ? book.number_of_pages.toString() : "")
       }
     };
   } catch (e) { return { status: 'error' }; }
@@ -339,9 +373,9 @@ function fetchPubMedMetadata(pmid) {
         year: result.pubdate ? result.pubdate.split(' ')[0] : "",
         fullDate: standardizeFullDate(result.pubdate),
         pmid: pmid,
-        volume: result.volume || "",
-        issue: result.issue || "",
-        pages: result.pages || "",
+        volume: sanitizeNumericValue(result.volume || ""),
+        issue: sanitizeNumericValue(result.issue || ""),
+        pages: sanitizeNumericValue(result.pages || ""),
         doi: (result.articleids || []).find(id => id.idtype === 'doi')?.value || ""
       }
     };

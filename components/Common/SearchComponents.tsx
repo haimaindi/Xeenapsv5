@@ -15,7 +15,7 @@ interface SmartSearchBoxProps {
  * Features:
  * 1. Continuous typing animation for placeholder
  * 2. High contrast border
- * 3. Interactive search button on the right
+ * 3. Interactive primary search button on the right
  * 4. Responsive design
  */
 export const SmartSearchBox: React.FC<SmartSearchBoxProps> = ({ 
@@ -83,17 +83,17 @@ export const SmartSearchBox: React.FC<SmartSearchBoxProps> = ({
       <input 
         type="text"
         placeholder={placeholderText}
-        className="w-full pl-5 pr-12 py-3 bg-white border border-gray-300 rounded-2xl focus:ring-2 focus:ring-[#004A74]/10 focus:border-[#004A74] outline-none transition-all shadow-sm text-sm"
+        className="w-full pl-5 pr-14 py-3 bg-white border border-gray-300 rounded-2xl focus:ring-2 focus:ring-[#004A74]/10 focus:border-[#004A74] outline-none transition-all shadow-sm text-sm"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
       />
       <button 
         onClick={onSearch}
-        className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-transparent hover:bg-gray-50 rounded-xl text-[#004A74] transition-all active:scale-90"
+        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-2.5 bg-[#004A74] hover:bg-[#003859] rounded-xl text-white transition-all active:scale-90 shadow-sm flex items-center justify-center"
         title="Search"
       >
-        <MagnifyingGlassIcon className="w-5 h-5 stroke-[2.5]" />
+        <MagnifyingGlassIcon className="w-5 h-5 stroke-[3]" />
       </button>
     </div>
   );

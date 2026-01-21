@@ -37,7 +37,7 @@ export const fetchLibrary = async (): Promise<LibraryItem[]> => {
 };
 
 /**
- * Server-side Paginated Fetch with AbortSignal
+ * Server-side Paginated Fetch with AbortSignal and Sorting Support
  */
 export const fetchLibraryPaginated = async (
   page: number = 1, 
@@ -45,11 +45,13 @@ export const fetchLibraryPaginated = async (
   search: string = "", 
   type: string = "All",
   path: string = "",
+  sortKey: string = "createdAt",
+  sortDir: string = "desc",
   signal?: AbortSignal
 ): Promise<{ items: LibraryItem[], totalCount: number }> => {
   try {
     if (!GAS_WEB_APP_URL) return { items: [], totalCount: 0 };
-    const url = `${GAS_WEB_APP_URL}?action=getLibrary&page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&type=${encodeURIComponent(type)}&path=${encodeURIComponent(path)}`;
+    const url = `${GAS_WEB_APP_URL}?action=getLibrary&page=${page}&limit=${limit}&search=${encodeURIComponent(search)}&type=${encodeURIComponent(type)}&path=${encodeURIComponent(path)}&sortKey=${sortKey}&sortDir=${sortDir}`;
     const response = await fetch(url, { signal });
     if (!response.ok) return { items: [], totalCount: 0 };
     const result: any = await response.json();

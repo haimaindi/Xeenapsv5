@@ -12,8 +12,10 @@ function doGet(e) {
       const search = e.parameter.search || "";
       const type = e.parameter.type || "All";
       const path = e.parameter.path || "";
+      const sortKey = e.parameter.sortKey || "createdAt";
+      const sortDir = e.parameter.sortDir || "desc";
       
-      const result = getPaginatedItems(CONFIG.SPREADSHEETS.LIBRARY, "Collections", page, limit, search, type, path);
+      const result = getPaginatedItems(CONFIG.SPREADSHEETS.LIBRARY, "Collections", page, limit, search, type, path, sortKey, sortDir);
       return createJsonResponse({ status: 'success', data: result.items, totalCount: result.totalCount });
     }
     if (action === 'getAiConfig') return createJsonResponse({ status: 'success', data: getProviderModel('GEMINI') });
@@ -120,7 +122,6 @@ function doPost(e) {
         mimeType: detectedMime,
         detectedDoi: doiMatch ? doiMatch[0] : null,
         detectedIsbn: isbnMatch ? isbnMatch[0] : null,
-        detectedPmid: pmidMatch ? (pmidMatch[1] || pmidMatch[0]) : null,
         detectedArxiv: arxivMatch ? (arxivMatch[1] || arxivMatch[0]) : null,
         imageView: imageView
       });

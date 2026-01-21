@@ -136,18 +136,24 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
     }
   }, [globalSearch]);
 
-  // Unified Fetch Data with AbortController support
+  // Unified Fetch Data with AbortController and Server-Side Sorting Support
   useEffect(() => {
     workflow.execute(
       async (signal) => {
         setIsInternalLoading(true);
         const pathPart = location.pathname.substring(1); // 'favorite', 'bookmark', etc
+        
+        const sortKey = sortConfig.key === 'none' ? 'createdAt' : sortConfig.key;
+        const sortDir = sortConfig.direction || 'desc';
+
         const result = await fetchLibraryPaginated(
           currentPage, 
           itemsPerPage, 
           appliedSearch, 
           activeFilter, 
           pathPart,
+          sortKey,
+          sortDir,
           signal
         );
         setServerItems(result.items);
@@ -159,7 +165,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
         // Error is handled by useAsyncWorkflow (e.g., ignoring manual aborts)
       }
     );
-  }, [currentPage, appliedSearch, activeFilter, location.pathname, itemsPerPage, onRefresh]);
+  }, [currentPage, appliedSearch, activeFilter, location.pathname, itemsPerPage, sortConfig.key, sortConfig.direction, onRefresh]);
 
   const handleSearchTrigger = () => {
     setAppliedSearch(localSearch);
@@ -173,6 +179,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
       else if (sortConfig.direction === 'desc') direction = null;
     }
     setSortConfig({ key: direction ? key : 'none', direction });
+    setCurrentPage(1); // Reset to first page when sorting changes
   };
 
   const getSortIcon = (key: keyof LibraryItem) => {
@@ -182,24 +189,13 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
     return <ArrowsUpDownIcon className="w-3 h-3 text-gray-300" />;
   };
 
-  const sortedItems = useMemo(() => {
-    if (sortConfig.key === 'none' || !sortConfig.direction) return serverItems;
-    return [...serverItems].sort((a, b) => {
-      const valA = (a[sortConfig.key as keyof LibraryItem] || '').toString().toLowerCase();
-      const valB = (b[sortConfig.key as keyof LibraryItem] || '').toString().toLowerCase();
-      if (valA < valB) return sortConfig.direction === 'asc' ? -1 : 1;
-      if (valA > valB) return sortConfig.direction === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [serverItems, sortConfig]);
-
   const totalPages = Math.ceil(totalItemsServer / itemsPerPage);
 
   const toggleSelectAll = () => {
-    if (selectedIds.length === sortedItems.length) {
+    if (selectedIds.length === serverItems.length) {
       setSelectedIds([]);
     } else {
-      setSelectedIds(sortedItems.map(item => item.id));
+      setSelectedIds(serverItems.map(item => item.id));
     }
   };
 
@@ -345,7 +341,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
               <tr>
                 <th className="sticky left-0 z-[60] px-6 py-4 w-12 bg-gray-50 border-r border-gray-100/50 shadow-sm text-center">
                   <div className="flex items-center justify-center">
-                    <StandardCheckbox onChange={toggleSelectAll} checked={sortedItems.length > 0 && selectedIds.length === sortedItems.length} />
+                    <StandardCheckbox onChange={toggleSelectAll} checked={serverItems.length > 0 && selectedIds.length === serverItems.length} />
                   </div>
                 </th>
                 {tableColumns.map(col => (
@@ -364,10 +360,10 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
             <tbody className="divide-y divide-gray-50">
               {isInternalLoading ? (
                 <SkeletonRows />
-              ) : sortedItems.length === 0 ? (
+              ) : serverItems.length === 0 ? (
                 <tr><td colSpan={tableColumns.length + 1} className="px-6 py-24 text-center"><div className="flex flex-col items-center justify-center space-y-2"><div className="p-4 bg-gray-50 rounded-full"><PlusIcon className="w-8 h-8 text-gray-300" /></div><p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No Collection Found</p></div></td></tr>
               ) : (
-                sortedItems.map((item) => (
+                serverItems.map((item) => (
                   <StandardTr key={item.id} className="cursor-pointer" onClick={() => setSelectedItem(item)}>
                     <td className="px-6 py-4 sticky left-0 z-20 border-r border-gray-100/50 bg-white group-hover:bg-[#f0f7fa] shadow-sm text-center" onClick={(e) => e.stopPropagation()}>
                       <StandardCheckbox checked={selectedIds.includes(item.id)} onChange={() => toggleSelectItem(item.id)} />
@@ -432,7 +428,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
         <StandardGridContainer>
           {isInternalLoading ? (
             [...Array(6)].map((_, i) => <div key={i} className="h-48 w-full skeleton rounded-3xl" />)
-          ) : sortedItems.map((item) => (
+          ) : serverItems.map((item) => (
             <StandardItemCard 
               key={item.id} 
               isSelected={selectedIds.includes(item.id)} 

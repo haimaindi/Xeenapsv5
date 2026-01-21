@@ -9,7 +9,7 @@ export const LOADING_CONFIG = {
   SHIMMER_DURATION: '1.5s',
   
   // Base colors for skeletons - Using Brand Identity with Transparency
-  SKELETON_BG: 'rgba(0, 74, 116, 0.3)',
+  SKELETON_BG: 'rgba(0, 74, 116, 0.2)',
   SKELETON_SHIMMER: 'rgba(254, 212, 0, 0.2)',
   
   // Threshold in ms: If data takes less than this, maybe don't show skeleton to avoid flickering

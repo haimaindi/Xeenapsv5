@@ -57,8 +57,8 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
       "volume": "14",
       "issue": "2",
       "pages": "120-135",
-      "inTextHarvard": "Full parenthetical Harvard in-text citation (List ALL authors, e.g. (Author1, Author2 and Author3, 2024))",
-      "bibHarvard": "Full non-truncated Harvard bibliographic entry (List ALL authors)"
+      "inTextHarvard": "Generate a parenthetical Harvard in-text citation. For 1-2 authors, list all names (e.g., 'Author1 & Author2, 2024'). For 3 or more authors, use 'et al.' after the first author (e.g., 'Author1 et al., 2024'). Ensure no italics for 'et al.' unless specified.",
+      "bibHarvard": "Generate a full Harvard bibliographic entry. List ALL authors regardless of the count (up to 20 authors). Format: 'Surname, Initial., Surname, Initial. and Surname, Initial. (Year) Title of article. Journal Name, Volume(Issue), pp. pages. DOI link.'"
     }`;
 
     const response = await callAiProxy('groq', prompt);

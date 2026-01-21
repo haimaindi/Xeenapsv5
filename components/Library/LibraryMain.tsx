@@ -50,11 +50,11 @@ import LibraryDetailView from './LibraryDetailView';
 /**
  * Custom Tooltip Component for truncated text
  * Implements "Overlay Expansion": The tooltip appears exactly over the original text.
- * Improved positioning logic to strictly attach to the row element.
+ * Fixed: Zero-offset positioning and matched styling for pixel-perfect overlay.
  */
-const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode }> = ({ text, children }) => {
+const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode; isTitle?: boolean }> = ({ text, children, isTitle }) => {
   const [show, setShow] = useState(false);
-  const [pos, setPos] = useState({ top: 0, left: 0, width: 0 });
+  const [pos, setPos] = useState({ top: 0, left: 0, width: 0, height: 0 });
   const anchorRef = useRef<HTMLDivElement>(null);
 
   const handleMouseEnter = () => {
@@ -62,19 +62,19 @@ const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode }> = ({
       const rect = anchorRef.current.getBoundingClientRect();
       const screenWidth = window.innerWidth;
       
-      // Calculate dynamic expansion width based on original cell size
-      const expandWidth = Math.max(rect.width + 32, 350);
+      // Expansion width
+      const expandWidth = Math.max(rect.width + 40, 380);
       
-      // Flip logic: if expansion goes off-screen to the right, shift left
       let finalLeft = rect.left;
-      if (finalLeft + expandWidth > screenWidth - 16) {
-        finalLeft = screenWidth - expandWidth - 16;
+      if (finalLeft + expandWidth > screenWidth - 20) {
+        finalLeft = screenWidth - expandWidth - 20;
       }
 
       setPos({
         top: rect.top,
-        left: Math.max(8, finalLeft),
-        width: expandWidth
+        left: Math.max(10, finalLeft),
+        width: expandWidth,
+        height: rect.height
       });
       setShow(true);
     }
@@ -85,24 +85,26 @@ const ElegantTooltip: React.FC<{ text: string; children: React.ReactNode }> = ({
   return (
     <div 
       ref={anchorRef}
-      className="w-full block"
+      className="w-full block relative"
       onMouseEnter={handleMouseEnter}
       onMouseLeave={() => setShow(false)}
     >
       {children}
       {show && (
         <div 
-          className="fixed z-[9999] pointer-events-none p-4 glass rounded-2xl border border-[#004A74]/30 shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
+          className="fixed z-[10000] pointer-events-none glass rounded-2xl border border-[#004A74]/40 shadow-2xl animate-in fade-in zoom-in-95 duration-200 overflow-hidden"
           style={{ 
             left: `${pos.left}px`, 
             top: `${pos.top}px`,
             width: `${pos.width}px`,
-            maxWidth: '550px'
+            maxWidth: '600px',
+            minHeight: `${pos.height}px`
           }}
         >
-          <div className="flex items-start gap-2">
+          {/* Internal padding strictly matches the vertical alignment of the table cell content */}
+          <div className="p-4 flex items-start gap-3">
             <InformationCircleIcon className="w-4 h-4 text-[#004A74] mt-0.5 shrink-0" />
-            <p className="text-xs font-bold text-[#004A74] leading-relaxed break-words whitespace-normal">
+            <p className={`text-[#004A74] leading-snug break-words whitespace-normal ${isTitle ? 'text-sm font-bold' : 'text-xs font-medium italic'}`}>
               {text}
             </p>
           </div>
@@ -399,7 +401,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                       <StandardCheckbox checked={selectedIds.includes(item.id)} onChange={() => toggleSelectItem(item.id)} />
                     </td>
                     <StandardTd isActiveSort={sortConfig.key === 'title'} className="sticky left-12 z-20 border-r border-gray-100/50 bg-white group-hover:bg-[#f0f7fa] shadow-sm">
-                      <ElegantTooltip text={item.title}>
+                      <ElegantTooltip text={item.title} isTitle>
                         <div className="flex items-start gap-2 group/title w-full">
                           <div className="shrink-0 mt-0.5 transition-transform group-hover/title:scale-110">
                             {item.addMethod === 'FILE' ? (
@@ -409,11 +411,11 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                             )}
                           </div>
                           <div className="flex-1 min-w-0">
-                            <div className="block">
-                              <span className="text-sm font-bold text-[#004A74] line-clamp-2 group-hover/title:underline leading-snug transition-all inline">
+                            <div className="block overflow-hidden" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
+                              <span className="text-sm font-bold text-[#004A74] group-hover/title:underline leading-tight transition-all">
                                 {item.title}
                               </span>
-                              <span className="inline-flex items-center gap-1 ml-1.5 shrink-0 align-middle">
+                              <span className="inline-flex items-center gap-1 ml-1.5 align-middle shrink-0">
                                 {item.isBookmarked && <BookmarkSolid className="w-3 h-3 text-[#004A74]" />}
                                 {item.isFavorite && <StarSolid className="w-3 h-3 text-[#FED400]" />}
                               </span>
@@ -425,14 +427,14 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
                     </StandardTd>
                     <StandardTd isActiveSort={sortConfig.key === 'author'}>
                       <ElegantTooltip text={item.author}>
-                        <div className="text-xs text-gray-600 italic line-clamp-2 w-full block text-center">
+                        <div className="text-xs text-gray-600 italic text-center w-full block overflow-hidden" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                           {item.author || '-'}
                         </div>
                       </ElegantTooltip>
                     </StandardTd>
                     <StandardTd isActiveSort={sortConfig.key === 'publisher'}>
                       <ElegantTooltip text={item.publisher}>
-                        <div className="text-xs text-gray-600 line-clamp-2 w-full block text-center">
+                        <div className="text-xs text-gray-600 text-center w-full block overflow-hidden" style={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>
                           {item.publisher || '-'}
                         </div>
                       </ElegantTooltip>

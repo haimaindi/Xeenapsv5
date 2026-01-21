@@ -10,33 +10,7 @@ import Sidebar from './components/Layout/Sidebar';
 import Header from './components/Layout/Header';
 import SettingsView from './components/Settings/SettingsView';
 import { BRAND_ASSETS } from './assets';
-
-const GlobalSkeleton = () => (
-  <div className="w-full h-full p-1 space-y-8 animate-in fade-in duration-500 overflow-hidden">
-    {/* Top bar skeleton (Search & Add) */}
-    <div className="flex flex-col lg:flex-row gap-4 justify-between items-center">
-      <div className="h-12 w-full lg:max-w-md skeleton rounded-2xl" />
-      <div className="h-12 w-full lg:w-48 skeleton rounded-2xl" />
-    </div>
-    
-    {/* Filters skeleton */}
-    <div className="flex gap-2 overflow-hidden shrink-0">
-      {[...Array(5)].map((_, i) => (
-        <div key={i} className="h-9 w-24 skeleton rounded-full shrink-0" />
-      ))}
-    </div>
-    
-    {/* Content grid skeleton */}
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-      {[...Array(6)].map((_, i) => (
-        <div key={i} className="h-60 w-full skeleton rounded-[2.5rem]" />
-      ))}
-    </div>
-    
-    {/* Bottom large area skeleton */}
-    <div className="hidden lg:block h-32 w-full skeleton rounded-[2.5rem]" />
-  </div>
-);
+import { GlobalAppLoader } from './components/Common/LoadingComponents';
 
 const App: React.FC = () => {
   const [items, setItems] = useState<LibraryItem[]>([]);
@@ -79,7 +53,7 @@ const App: React.FC = () => {
 
           <div className="mt-4 lg:mt-6 flex-1 pb-10 overflow-hidden">
             {isLoading ? (
-              <GlobalSkeleton />
+              <GlobalAppLoader />
             ) : (
               <Routes>
                 <Route path="/" element={<LibraryMain items={items} isLoading={isLoading} onRefresh={loadData} globalSearch={searchQuery} />} />

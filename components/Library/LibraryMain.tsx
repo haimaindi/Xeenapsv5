@@ -47,6 +47,7 @@ import {
   StandardPrimaryButton, 
   StandardFilterButton 
 } from '../Common/ButtonComponents';
+import { TableSkeletonRows, CardGridSkeleton } from '../Common/LoadingComponents';
 import LibraryDetailView from './LibraryDetailView';
 import { showXeenapsAlert } from '../../utils/swalUtils';
 import { showXeenapsDeleteConfirm } from '../../utils/confirmUtils';
@@ -315,24 +316,6 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
     }
   };
 
-  const SkeletonRows = () => (
-    <>
-      {[...Array(5)].map((_, i) => (
-        <tr key={i} className="animate-pulse">
-          <td className="px-6 py-4"><div className="h-4 w-4 bg-gray-100 rounded" /></td>
-          <td className="px-6 py-4"><div className="h-4 w-64 bg-gray-100 rounded-lg" /></td>
-          <td className="px-6 py-4"><div className="h-4 w-32 bg-gray-100 rounded-lg" /></td>
-          <td className="px-6 py-4"><div className="h-4 w-32 bg-gray-100 rounded-lg" /></td>
-          <td className="px-6 py-4"><div className="h-4 w-12 bg-gray-100 rounded-lg" /></td>
-          <td className="px-6 py-4"><div className="h-4 w-24 bg-gray-100 rounded-lg" /></td>
-          <td className="px-6 py-4"><div className="h-4 w-24 bg-gray-100 rounded-lg" /></td>
-          <td className="px-6 py-4"><div className="h-4 w-24 bg-gray-100 rounded-lg" /></td>
-          <td className="px-6 py-4"><div className="h-4 w-32 bg-gray-100 rounded-lg" /></td>
-        </tr>
-      ))}
-    </>
-  );
-
   const tableColumns: { key: keyof LibraryItem; label: string; width?: string }[] = [
     { key: 'title', label: 'Title', width: '300px' },
     { key: 'author', label: 'Author(s)', width: '200px' },
@@ -455,7 +438,7 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
             </thead>
             <tbody className="divide-y divide-gray-50">
               {isInternalLoading ? (
-                <SkeletonRows />
+                <TableSkeletonRows count={5} />
               ) : serverItems.length === 0 ? (
                 <tr><td colSpan={tableColumns.length + 1} className="px-6 py-24 text-center"><div className="flex flex-col items-center justify-center space-y-2"><div className="p-4 bg-gray-50 rounded-full"><PlusIcon className="w-8 h-8 text-gray-300" /></div><p className="text-sm font-bold text-gray-400 uppercase tracking-widest">No Collection Found</p></div></td></tr>
               ) : (
@@ -525,67 +508,69 @@ const LibraryMain: React.FC<LibraryMainProps> = ({ items: initialItems, isLoadin
       </div>
 
       <div className="lg:hidden flex-none pb-10">
-        <StandardGridContainer>
-          {isInternalLoading ? (
-            [...Array(6)].map((_, i) => <div key={i} className="h-48 w-full skeleton rounded-3xl" />)
-          ) : serverItems.map((item) => (
-            <StandardItemCard 
-              key={item.id} 
-              isSelected={selectedIds.includes(item.id)} 
-              onClick={() => setSelectedItem(item)}
-            >
-              {/* Floating Status Icons Top Right */}
-              <div className="absolute top-4 right-4 flex gap-1.5 z-10">
-                {item.isBookmarked && <BookmarkSolid className="w-4 h-4 text-[#004A74] drop-shadow-sm" />}
-                {item.isFavorite && <StarSolid className="w-4 h-4 text-[#FED400] drop-shadow-sm" />}
-              </div>
-
-              <div className="flex items-center gap-3 mb-2" onClick={(e) => e.stopPropagation()}>
-                <button 
-                  onClick={() => toggleSelectItem(item.id)}
-                  className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${selectedIds.includes(item.id) ? 'bg-[#004A74] border-[#004A74] text-white' : 'bg-white border-gray-200'}`}
-                >
-                  {selectedIds.includes(item.id) && <CheckIcon className="w-3 h-3 stroke-[4]" />}
-                </button>
-                <span className="text-[8px] font-black uppercase tracking-widest bg-[#004A74] text-white px-2 py-0.5 rounded-full line-clamp-2">
-                  {item.category || 'GENERAL'}
-                </span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#004A74] opacity-80 line-clamp-2">
-                  {item.topic || 'NO TOPIC'}
-                </span>
-              </div>
-              <div className="mt-[-4px] mb-2">
-                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter line-clamp-2">
-                  {item.subTopic || 'No Sub Topic'}
-                </span>
-              </div>
-              <div className="flex items-start gap-2 mb-3">
-                <div className="flex-1 min-w-0">
-                  <h3 className="text-sm font-bold text-[#004A74] line-clamp-2 leading-tight">
-                    {item.title}
-                  </h3>
+        {isInternalLoading ? (
+          <CardGridSkeleton count={6} />
+        ) : (
+          <StandardGridContainer>
+            {serverItems.map((item) => (
+              <StandardItemCard 
+                key={item.id} 
+                isSelected={selectedIds.includes(item.id)} 
+                onClick={() => setSelectedItem(item)}
+              >
+                {/* Floating Status Icons Top Right */}
+                <div className="absolute top-4 right-4 flex gap-1.5 z-10">
+                  {item.isBookmarked && <BookmarkSolid className="w-4 h-4 text-[#004A74] drop-shadow-sm" />}
+                  {item.isFavorite && <StarSolid className="w-4 h-4 text-[#FED400] drop-shadow-sm" />}
                 </div>
-              </div>
-              <p className="text-xs font-medium text-gray-500 italic line-clamp-2 mb-1">
-                {item.author || 'Unknown Author'}
-              </p>
-              <p className="text-[11px] text-gray-400 truncate mb-4">
-                {item.publisher || '-'}
-              </p>
-              <div className="h-px bg-gray-50 mb-3" />
-              <div className="flex items-center justify-between text-gray-400">
-                <span className="text-xs font-mono font-black text-[#004A74]">
-                  {item.year || '-'}
-                </span>
-                <span className="text-[9px] font-bold uppercase tracking-tight">
-                  {formatDateTime(item.createdAt)}
-                </span>
-              </div>
-            </StandardItemCard>
-          ))}
-        </StandardGridContainer>
+
+                <div className="flex items-center gap-3 mb-2" onClick={(e) => e.stopPropagation()}>
+                  <button 
+                    onClick={() => toggleSelectItem(item.id)}
+                    className={`w-5 h-5 rounded-full border flex items-center justify-center transition-all ${selectedIds.includes(item.id) ? 'bg-[#004A74] border-[#004A74] text-white' : 'bg-white border-gray-200'}`}
+                  >
+                    {selectedIds.includes(item.id) && <CheckIcon className="w-3 h-3 stroke-[4]" />}
+                  </button>
+                  <span className="text-[8px] font-black uppercase tracking-widest bg-[#004A74] text-white px-2 py-0.5 rounded-full line-clamp-2">
+                    {item.category || 'GENERAL'}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-widest text-[#004A74] opacity-80 line-clamp-2">
+                    {item.topic || 'NO TOPIC'}
+                  </span>
+                </div>
+                <div className="mt-[-4px] mb-2">
+                  <span className="text-[9px] font-bold text-gray-400 uppercase tracking-tighter line-clamp-2">
+                    {item.subTopic || 'No Sub Topic'}
+                  </span>
+                </div>
+                <div className="flex items-start gap-2 mb-3">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-sm font-bold text-[#004A74] line-clamp-2 leading-tight">
+                      {item.title}
+                    </h3>
+                  </div>
+                </div>
+                <p className="text-xs font-medium text-gray-500 italic line-clamp-2 mb-1">
+                  {item.author || 'Unknown Author'}
+                </p>
+                <p className="text-[11px] text-gray-400 truncate mb-4">
+                  {item.publisher || '-'}
+                </p>
+                <div className="h-px bg-gray-50 mb-3" />
+                <div className="flex items-center justify-between text-gray-400">
+                  <span className="text-xs font-mono font-black text-[#004A74]">
+                    {item.year || '-'}
+                  </span>
+                  <span className="text-[9px] font-bold uppercase tracking-tight">
+                    {formatDateTime(item.createdAt)}
+                  </span>
+                </div>
+              </StandardItemCard>
+            ))}
+          </StandardGridContainer>
+        )}
         {totalPages > 1 && <div className="pt-8"><StandardTableFooter totalItems={totalItemsServer} currentPage={currentPage} itemsPerPage={itemsPerPage} totalPages={totalPages} onPageChange={setCurrentPage} /></div>}
       </div>
     </div>

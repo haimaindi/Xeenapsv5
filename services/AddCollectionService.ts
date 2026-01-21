@@ -4,7 +4,7 @@ import { callAiProxy } from "./gasService";
 
 /**
  * AddCollectionService - Metadata Extraction via AI Proxy (GROQ).
- * FOCUS: Verbatim abstract extraction, non-truncated citations, and metadata-aware enrichment.
+ * FOCUS: Verbatim abstract extraction, non-truncated Harvard citations, and metadata-aware enrichment.
  */
 export const extractMetadataWithAI = async (textSnippet: string, existingData: Partial<LibraryItem> = {}): Promise<Partial<LibraryItem>> => {
   try {
@@ -23,9 +23,9 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
        - CLEANING: Remove all markdown symbols like *, #, or brackets.
        - EMPTY FALLBACK: If NO abstract is found in the snippet, return an empty string "". DO NOT hallucinate.
     3. CITATION GENERATION (PREMIUM ACCURACY):
-       - Styles: APA, Harvard, Chicago.
+       - Style: Harvard (Standard British/Australian).
        - ACCURACY: Follow the latest edition rules strictly.
-       - NO TRUNCATION: Do NOT use "..." or "et al." unless the style guide specifically requires it for high counts. YOU MUST LIST ALL AUTHORS provided in the metadata context. Never cut the citation short.
+       - NO TRUNCATION (CRITICAL): Do NOT use "et al." or "...". YOU MUST LIST ALL AUTHORS provided in the metadata context in both the in-text and bibliographic entries. Never cut the citation short.
     4. NO HALLUCINATION: Identifiers (DOI, ISBN, etc.) must be EXPLICIT in the snippet.
     5. DATA CLEANING: For "volume", "issue", and "pages", provide ONLY numbers/identifiers (no prefixes like "Vol.").
     --------------------------
@@ -56,12 +56,8 @@ export const extractMetadataWithAI = async (textSnippet: string, existingData: P
       "volume": "14",
       "issue": "2",
       "pages": "120-135",
-      "inTextAPA": "Accurate non-truncated citation",
-      "inTextHarvard": "Accurate non-truncated citation",
-      "inTextChicago": "Accurate non-truncated citation",
-      "bibAPA": "Full Bibliographic entry",
-      "bibHarvard": "Full Bibliographic entry",
-      "bibChicago": "Full Bibliographic entry"
+      "inTextHarvard": "Full non-truncated Harvard in-text citation (List ALL authors)",
+      "bibHarvard": "Full non-truncated Harvard bibliographic entry (List ALL authors)"
     }`;
 
     const response = await callAiProxy('groq', prompt);

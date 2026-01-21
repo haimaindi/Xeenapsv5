@@ -1,3 +1,4 @@
+
 export enum SourceType {
   LINK = 'LINK',
   FILE = 'FILE',
@@ -73,12 +74,8 @@ export interface LibraryItem {
   tags: string[];
   
   // Academic Citations
-  inTextAPA?: string;
   inTextHarvard?: string;
-  inTextChicago?: string;
-  bibAPA?: string;
   bibHarvard?: string;
-  bibChicago?: string;
   
   // Deep Insights
   researchMethodology?: string;

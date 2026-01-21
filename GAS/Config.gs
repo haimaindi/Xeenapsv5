@@ -1,3 +1,4 @@
+
 /**
  * XEENAPS PKM - GLOBAL CONFIGURATION
  */
@@ -17,7 +18,7 @@ const CONFIG = {
       'doi', 'issn', 'isbn', 'pmid', 'arxivId', 'bibcode',
       'source', 'format', 'url', 'fileId', 'youtubeId', 'imageView', 
       'keywords', 'labels', 'tags', 'createdAt', 'updatedAt',
-      'inTextAPA', 'inTextHarvard', 'inTextChicago', 'bibAPA', 'bibHarvard', 'bibChicago',
+      'inTextHarvard', 'bibHarvard',
       'researchMethodology', 'abstract', 'summary', 
       'strength', 'weakness', 'unfamiliarTerminology', 'supportingReferences', 
       'videoRecommendation', 'quickTipsForYou',

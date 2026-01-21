@@ -1,10 +1,9 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { LibraryItem } from '../../types';
 import { 
   XMarkIcon, 
   BookOpenIcon, 
-  BeakerIcon, 
   ChatBubbleBottomCenterTextIcon,
   AcademicCapIcon,
   LightBulbIcon,
@@ -19,21 +18,11 @@ interface LibraryDetailViewProps {
 }
 
 const LibraryDetailView: React.FC<LibraryDetailViewProps> = ({ item, onClose }) => {
-  const [activeStyle, setActiveStyle] = useState<'APA' | 'Harvard' | 'Chicago'>('APA');
-
   const handleCopy = (text?: string) => {
     if (text) {
       navigator.clipboard.writeText(text);
     }
   };
-
-  const getCitationData = () => {
-    if (activeStyle === 'APA') return { inText: item.inTextAPA, bib: item.bibAPA };
-    if (activeStyle === 'Harvard') return { inText: item.inTextHarvard, bib: item.bibHarvard };
-    return { inText: item.inTextChicago, bib: item.bibChicago };
-  };
-
-  const { inText, bib } = getCitationData();
 
   return (
     <div className="fixed inset-0 z-[110] flex items-center justify-end pointer-events-none">
@@ -53,31 +42,20 @@ const LibraryDetailView: React.FC<LibraryDetailViewProps> = ({ item, onClose }) 
           <section className="space-y-6">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2">
-                <AcademicCapIcon className="w-4 h-4" /> Academic Citation
+                <AcademicCapIcon className="w-4 h-4" /> Academic Citation (Harvard Style)
               </h3>
-              <div className="flex bg-gray-100 p-1 rounded-xl gap-1">
-                {(['APA', 'Harvard', 'Chicago'] as const).map(style => (
-                  <button 
-                    key={style}
-                    onClick={() => setActiveStyle(style)}
-                    className={`px-3 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${activeStyle === style ? 'bg-[#004A74] text-white shadow-sm' : 'text-gray-400 hover:text-[#004A74]'}`}
-                  >
-                    {style}
-                  </button>
-                ))}
-              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="p-5 bg-gray-50 rounded-3xl border border-gray-100 relative group">
-                <p className="text-[10px] font-bold text-gray-400 mb-2 uppercase">In-Text ({activeStyle})</p>
-                <code className="text-xs font-mono font-bold text-[#004A74] block bg-white p-3 rounded-xl border border-gray-100">{inText || 'Not Available'}</code>
-                <button onClick={() => handleCopy(inText)} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"><DocumentDuplicateIcon className="w-4 h-4 text-gray-400" /></button>
+                <p className="text-[10px] font-bold text-gray-400 mb-2 uppercase">In-Text Citation</p>
+                <code className="text-xs font-mono font-bold text-[#004A74] block bg-white p-3 rounded-xl border border-gray-100">{item.inTextHarvard || 'Not Available'}</code>
+                <button onClick={() => handleCopy(item.inTextHarvard)} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"><DocumentDuplicateIcon className="w-4 h-4 text-gray-400" /></button>
               </div>
               <div className="p-5 bg-gray-50 rounded-3xl border border-gray-100 relative group">
-                <p className="text-[10px] font-bold text-gray-400 mb-2 uppercase">Bibliography ({activeStyle})</p>
-                <code className="text-xs font-mono font-bold text-[#004A74] block bg-white p-3 rounded-xl border border-gray-100 leading-relaxed">{bib || 'Not Available'}</code>
-                <button onClick={() => handleCopy(bib)} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"><DocumentDuplicateIcon className="w-4 h-4 text-gray-400" /></button>
+                <p className="text-[10px] font-bold text-gray-400 mb-2 uppercase">Bibliographic Entry</p>
+                <code className="text-xs font-mono font-bold text-[#004A74] block bg-white p-3 rounded-xl border border-gray-100 leading-relaxed">{item.bibHarvard || 'Not Available'}</code>
+                <button onClick={() => handleCopy(item.bibHarvard)} className="absolute top-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity"><DocumentDuplicateIcon className="w-4 h-4 text-gray-400" /></button>
               </div>
             </div>
           </section>
@@ -86,7 +64,10 @@ const LibraryDetailView: React.FC<LibraryDetailViewProps> = ({ item, onClose }) 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             <section className="space-y-4">
               <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2"><BookOpenIcon className="w-4 h-4" /> Abstract</h3>
-              <div className="bg-white border border-gray-100 p-6 rounded-[2.5rem] shadow-sm italic text-sm text-gray-600 leading-relaxed">{item.abstract || 'N/A'}</div>
+              <div 
+                className="bg-white border border-gray-100 p-6 rounded-[2.5rem] shadow-sm italic text-sm text-gray-600 leading-relaxed overflow-hidden"
+                dangerouslySetInnerHTML={{ __html: item.abstract || 'N/A' }}
+              />
             </section>
             <section className="space-y-4">
               <h3 className="text-xs font-black uppercase tracking-widest text-gray-400 flex items-center gap-2"><ChatBubbleBottomCenterTextIcon className="w-4 h-4" /> Summary</h3>

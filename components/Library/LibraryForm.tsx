@@ -144,12 +144,8 @@ const LibraryForm: React.FC<LibraryFormProps> = ({ onComplete, items = [] }) => 
     labels: [] as string[],
     url: '',
     fileId: '',
-    inTextAPA: '',
     inTextHarvard: '',
-    inTextChicago: '',
-    bibAPA: '',
     bibHarvard: '',
-    bibChicago: '',
     chunks: [] as string[]
   });
 

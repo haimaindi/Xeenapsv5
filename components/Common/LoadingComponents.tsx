@@ -36,20 +36,21 @@ export const GlobalAppLoader: React.FC = () => (
 /**
  * TableSkeletonRows
  * Mirroring the exact column distribution of StandardTableWrapper
+ * Updated: Using .skeleton class for branded loading consistency.
  */
 export const TableSkeletonRows: React.FC<{ count?: number }> = ({ count = 5 }) => (
   <>
     {[...Array(count)].map((_, i) => (
       <tr key={i} className="animate-pulse">
-        <td className="px-6 py-4"><div className="h-4 w-4 bg-gray-100 rounded mx-auto" /></td>
-        <td className="px-6 py-4"><div className="h-4 w-64 bg-gray-100 rounded-lg" /></td>
-        <td className="px-6 py-4"><div className="h-4 w-32 bg-gray-100 rounded-lg mx-auto" /></td>
-        <td className="px-6 py-4"><div className="h-4 w-32 bg-gray-100 rounded-lg mx-auto" /></td>
-        <td className="px-6 py-4"><div className="h-4 w-12 bg-gray-100 rounded-lg mx-auto" /></td>
-        <td className="px-6 py-4"><div className="h-4 w-24 bg-gray-100 rounded-lg mx-auto" /></td>
-        <td className="px-6 py-4"><div className="h-4 w-24 bg-gray-100 rounded-lg mx-auto" /></td>
-        <td className="px-6 py-4"><div className="h-4 w-24 bg-gray-100 rounded-lg mx-auto" /></td>
-        <td className="px-6 py-4"><div className="h-4 w-32 bg-gray-100 rounded-lg mx-auto" /></td>
+        <td className="px-6 py-4"><div className="h-4 w-4 skeleton rounded mx-auto" /></td>
+        <td className="px-6 py-4"><div className="h-4 w-64 skeleton rounded-lg" /></td>
+        <td className="px-6 py-4"><div className="h-4 w-32 skeleton rounded-lg mx-auto" /></td>
+        <td className="px-6 py-4"><div className="h-4 w-32 skeleton rounded-lg mx-auto" /></td>
+        <td className="px-6 py-4"><div className="h-4 w-12 skeleton rounded-lg mx-auto" /></td>
+        <td className="px-6 py-4"><div className="h-4 w-24 skeleton rounded-lg mx-auto" /></td>
+        <td className="px-6 py-4"><div className="h-4 w-24 skeleton rounded-lg mx-auto" /></td>
+        <td className="px-6 py-4"><div className="h-4 w-24 skeleton rounded-lg mx-auto" /></td>
+        <td className="px-6 py-4"><div className="h-4 w-32 skeleton rounded-lg mx-auto" /></td>
       </tr>
     ))}
   </>
